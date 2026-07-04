@@ -1,0 +1,33 @@
+target/
+!.mvn/wrapper/maven-wrapper.jar
+*.class
+*.log
+*.jar
+*.war
+*.iml
+.idea/
+.vscode/
+*.swp
+.DS_Store
+
+# Allure
+allure-results/
+allure-report/
+# Trend history data files (keep the directory itself via .gitkeep)
+allure-history/*.json
+
+# Test outputs
+test-output/
+screenshots/
+extent-reports/
+excel-reports/
+
+# Local SMTP / schedule config (copy from scripts/.env.example)
+scripts/.env
+
+# VRGO OAuth — never commit real tokens
+secrets/vrgo-auth.local.properties
+secrets/vrgo-auth.local.propertiescls
+secrets/vrgo-auth.local.properties.example
+vrgo-token-cache.json
+src/test/resources/token-generator/vrgo-token.json

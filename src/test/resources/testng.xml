@@ -1,0 +1,56 @@
+<?xml version="1.0" encoding="UTF-8"?>
+
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+
+<suite name="API Automation Suite" verbose="1">
+
+    <listeners>
+
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+
+    </listeners>
+
+    <test name="API Regression - Run 1" preserve-order="true">
+
+        <classes>
+
+            <class name="com.automation.api.tests.ContentDetail"/>
+
+            <class name="com.automation.api.tests.ContinueWatch"/>
+
+            <class name="com.automation.api.tests.ContinueWatchScenarios"/>
+
+            <class name="com.automation.api.tests.WatchAgain"/>
+
+            <class name="com.automation.api.tests.WatchlistFavourite"/>
+
+            <class name="com.automation.api.tests.HomescreenMenu"/>
+
+            <class name="com.automation.api.tests.ConfigService"/>
+
+            <class name="com.automation.api.tests.SearchHistory"/>
+
+            <class name="com.automation.api.tests.LockChannel"/>
+
+            <class name="com.automation.api.tests.LastTunedChannel"/>
+
+            <class name="com.automation.api.tests.VRSearchProxy"/>
+
+            <class name="com.automation.api.tests.RecommendationProxy"/>
+
+            <class name="com.automation.api.tests.LearnAction"/>
+
+            <class name="com.automation.api.tests.Footer"/>
+
+            <class name="com.automation.api.tests.HomescreenProxy"/>
+
+        </classes>
+
+    </test>
+
+
+    </test>
+
+
+</suite>
+

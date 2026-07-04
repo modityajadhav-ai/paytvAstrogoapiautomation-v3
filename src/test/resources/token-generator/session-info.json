@@ -1,0 +1,141 @@
+{
+  "account": {
+    "accountId": "60707160",
+    "category": "residential",
+    "ceIcon": false,
+    "cohortId": "default",
+    "country": "MY",
+    "features": {
+      "autoStandbyEnabled": true,
+      "cdvrEnabled": true,
+      "connectionReminderEnabled": true,
+      "continueWatchingEnabled": true,
+      "favouriteChannelsEnabled": true,
+      "likedContentEnabled": true,
+      "lockedChannelsEnabled": true,
+      "ppvEnabled": true,
+      "restartTvEnabled": true,
+      "smartTvEnabled": true,
+      "thirdPartyAppsEnabled": true,
+      "tvodEnabled": true,
+      "vodFavouritesEnabled": true
+    },
+    "group": "malaysiaLive",
+    "ottBouquetId": "OTT00",
+    "profilesEnabled": true,
+    "quotas": {
+      "cdvr": 720000,
+      "maxConcurrentDevices": 2,
+      "maxConcurrentLargeScreenDevices": 1,
+      "maxConcurrentSmallScreenDevices": 4,
+      "maxDevices": 5,
+      "usedCdvr": 630120
+    },
+    "status": "active",
+    "type": "regular",
+    "wmId": "557bf14a-d19c-476f-b77d-83dca8913661"
+  },
+  "device": {
+    "audioCodecAc3": false,
+    "audioCodecEac3": false,
+    "deviceFamilyId": "crm",
+    "deviceFamilyName": "Chrome",
+    "deviceGroupId": "web",
+    "deviceGroupName": "Web",
+    "deviceId": "072d0332-6dcb-4d01-9d99-be5be8df3a72",
+    "deviceSegmentId": "ott",
+    "deviceSegmentName": "OTT",
+    "enabled": true,
+    "maxResolution": 720,
+    "minResolution": 144,
+    "videoCodecHevc": true
+  },
+  "entitlements": [
+    {"offerId": "102", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "103", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "212", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "231", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "34", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "42", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "446", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "46", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "49", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "496", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "58", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "59", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "60", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "61", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "62", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "64", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "93", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "94", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {"offerId": "95", "offerType": "SVOD", "startDate": "2026-06-03T09:11:55.587Z"},
+    {
+      "endDate": "2026-07-02T15:29:28.003Z",
+      "offerId": "VTUU147URES2306",
+      "offerType": "TVOD",
+      "startDate": "2026-06-30T15:29:28.003Z"
+    },
+    {
+      "endDate": "2026-07-02T10:13:19.874Z",
+      "offerId": "VTUU164URES2306",
+      "offerType": "TVOD",
+      "startDate": "2026-06-30T10:13:19.874Z"
+    }
+  ],
+  "experience": {
+    "catalogIds": ["ottlive", "weblive", "crmlive", "ottkidslive", "webkidslive", "crmkidslive"],
+    "experienceId": "MAIN"
+  },
+  "profile": {
+    "audioPreferences": {
+      "bitrateId": "384",
+      "language": {
+        "codes": ["ta", "tam", "ta-IN", "ta-LK", "ta-MY", "ta-SG"],
+        "languageId": "tam",
+        "localName": "தமிழ்",
+        "name": "Tamil"
+      }
+    },
+    "avatarId": "00000030",
+    "interfacePreferences": {
+      "language": {
+        "codes": ["en", "eng"],
+        "languageId": "eng",
+        "localName": "English",
+        "name": "English"
+      }
+    },
+    "metadataPreferences": {
+      "language": {
+        "codes": ["en", "eng"],
+        "languageId": "eng",
+        "localName": "English",
+        "name": "English"
+      }
+    },
+    "name": "Adultttapoabb",
+    "parentalRating": {
+      "age": 13,
+      "parentalRatingId": "13",
+      "rating": "13"
+    },
+    "profileId": "60707160_0",
+    "profileSessionId": "2940f0a8-d2f9-4df0-953c-fa358741fb72",
+    "subtitlePreferences": {
+      "enabled": true,
+      "language": {
+        "codes": ["en", "eng"],
+        "languageId": "eng",
+        "localName": "English",
+        "name": "English"
+      }
+    },
+    "type": "adult",
+    "videoPreferences": {
+      "bitrateId": "1580",
+      "resolutionId": "auto"
+    }
+  },
+  "sessionId": "be85de6b-a129-46d2-9f9d-d4d9d914d67a"
+}

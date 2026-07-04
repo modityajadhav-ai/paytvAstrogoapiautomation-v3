@@ -1,43 +1,24 @@
-# GitLab CI — API Automation (TestNG + Maven)
-#
-# Required CI/CD variable (Settings → CI/CD → Variables):
-#   VRGO_REFRESH_TOKEN  — masked, protected (OAuth refresh token for test env)
-#
-# Optional (browser auth recovery if refresh token expires):
-#   VRGO_TEST_USERNAME, VRGO_TEST_PASSWORD
-#
-# Optional overrides:
-#   TEST_ENV            — Maven profile: test (default), dev, stage, load, prod
-#   VRGO_X_API_KEY      — only if not set in environments/<env>.properties
+# GitLab CI - API Automation (TestNG + Maven)
+# Required CI/CD variable: VRGO_REFRESH_TOKEN (masked)
+# Optional: VRGO_TEST_USERNAME, VRGO_TEST_PASSWORD, TEST_ENV
 
 stages:
   - test
 
 variables:
-  MAVEN_OPTS: "-Xmx768m -XX:+UseSerialGC -Dhttps.protocols=TLSv1.2,TLSv1.3"
-  MAVEN_CLI_OPTS: "-B -ntp"
+  MAVEN_OPTS: "-Xmx768m -XX:+UseSerialGC"
   TEST_ENV: "test"
-  # Skip bundled Allure HTML in CI; download allure-results artifact instead.
-  ALLURE_REPORT_SKIP: "true"
 
-# Cache Maven dependencies between pipeline runs.
-cache:
-  key: "${CI_COMMIT_REF_SLUG}-maven"
-  paths:
-    - .m2/repository/
-
-api-tests:
+api_tests:
   stage: test
   image: eclipse-temurin:17-jdk
-  timeout: 30m
 
   before_script:
     - chmod +x mvnw
-    - export MAVEN_USER_HOME="$CI_PROJECT_DIR/.m2"
 
   script:
-    - echo "Running API suite on environment profile: ${TEST_ENV}"
-    - ./mvnw $MAVEN_CLI_OPTS clean test -P${TEST_ENV} -Dallure.report.skip=${ALLURE_REPORT_SKIP}
+    - echo "Running API suite on profile ${TEST_ENV}"
+    - ./mvnw -B -ntp clean test -P${TEST_ENV} -Dallure.report.skip=true
 
   artifacts:
     when: always
@@ -48,8 +29,8 @@ api-tests:
       - target/excel-reports/
       - target/surefire-reports/
 
-  rules:
-    - if: $CI_PIPELINE_SOURCE == "push"
-    - if: $CI_PIPELINE_SOURCE == "merge_request_event"
-    - if: $CI_PIPELINE_SOURCE == "web"
-    - if: $CI_PIPELINE_SOURCE == "schedule"
+  only:
+    - main
+    - merge_requests
+    - schedules
+    - web

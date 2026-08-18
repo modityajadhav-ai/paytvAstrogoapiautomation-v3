@@ -11,7 +11,8 @@ import java.util.ArrayList;
 import java.util.List;
 
 /**
- * Persists rotated {@code refresh_token} back to {@code secrets/vrgo-auth.local.properties}
+ * Persists rotated {@code refresh_token} back to the active environment's secrets file
+ * ({@code secrets/vrgo-auth.<env>.local.properties} or legacy {@code secrets/vrgo-auth.local.properties})
  * so you do not need to copy from the browser after every successful test run.
  */
 final class VrgoAuthSecretsWriter {
@@ -22,6 +23,10 @@ final class VrgoAuthSecretsWriter {
     }
 
     static void persistRefreshToken(String refreshToken) {
+        persistProperty("vrgo.refresh.token", refreshToken);
+    }
+
+    private static void persistProperty(String propertyKey, String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             return;
         }
@@ -34,18 +39,18 @@ final class VrgoAuthSecretsWriter {
             List<String> updated = new ArrayList<>();
             boolean replaced = false;
             for (String line : lines) {
-                if (line.startsWith("vrgo.refresh.token=")) {
-                    updated.add("vrgo.refresh.token=" + refreshToken.strip());
+                if (line.startsWith(propertyKey + "=")) {
+                    updated.add(propertyKey + "=" + refreshToken.strip());
                     replaced = true;
                 } else {
                     updated.add(line);
                 }
             }
             if (!replaced) {
-                updated.add("vrgo.refresh.token=" + refreshToken.strip());
+                updated.add(propertyKey + "=" + refreshToken.strip());
             }
             Files.write(path, updated, StandardCharsets.UTF_8);
-            LOG.info("Updated refresh_token in {}", path.toAbsolutePath());
+            LOG.info("Updated {} in {}", propertyKey, path.toAbsolutePath());
         } catch (IOException e) {
             LOG.warn("Could not update {}: {}", path, e.getMessage());
         }

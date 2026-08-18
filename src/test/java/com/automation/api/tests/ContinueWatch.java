@@ -19,6 +19,10 @@ import org.testng.SkipException;
 import org.testng.annotations.Test;
 
 import java.lang.reflect.Array;
+import java.net.ConnectException;
+import java.net.NoRouteToHostException;
+import java.net.SocketTimeoutException;
+import java.net.UnknownHostException;
 import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZonedDateTime;
@@ -467,7 +471,7 @@ public class ContinueWatch extends BaseTest {
         int attempt = 0;
         while (true) {
             attempt++;
-            last = continueWatchApi.getContinueWatchRaw(20, 0, false);
+            last = getContinueWatchRawWithTransientRetry(20, 0, false);
             last.then()
                     .statusCode(200)
                     .body("status", equalTo(true))
@@ -509,7 +513,7 @@ public class ContinueWatch extends BaseTest {
         int attempt = 0;
         while (true) {
             attempt++;
-            last = continueWatchApi.getContinueWatchRaw(20, 0, false);
+            last = getContinueWatchRawWithTransientRetry(20, 0, false);
             last.then()
                     .statusCode(200)
                     .body("status", equalTo(true))
@@ -535,6 +539,47 @@ public class ContinueWatch extends BaseTest {
                 Thread.currentThread().interrupt();
                 throw new SkipException("Interrupted while polling CW after CDVR add");
             }
+        }
+    }
+
+    private Response getContinueWatchRawWithTransientRetry(int limit, int offset, boolean includeHistory) {
+        int maxAttempts = readIntProperty("vrgo.http.transient.retry.max", 3);
+        int retryDelayMs = readIntProperty("vrgo.http.transient.retry.delay.ms", 1_500);
+        RuntimeException lastFailure = null;
+        for (int networkAttempt = 1; networkAttempt <= maxAttempts; networkAttempt++) {
+            try {
+                return continueWatchApi.getContinueWatchRaw(limit, offset, includeHistory);
+            } catch (RuntimeException ex) {
+                if (!isTransientNetworkFailure(ex) || networkAttempt >= maxAttempts) {
+                    throw ex;
+                }
+                lastFailure = ex;
+                Allure.parameter("cw.http.transient.retry.attempt", String.valueOf(networkAttempt));
+                sleepQuietly(retryDelayMs);
+            }
+        }
+        throw lastFailure;
+    }
+
+    private static boolean isTransientNetworkFailure(Throwable t) {
+        while (t != null) {
+            if (t instanceof ConnectException
+                    || t instanceof NoRouteToHostException
+                    || t instanceof SocketTimeoutException
+                    || t instanceof UnknownHostException) {
+                return true;
+            }
+            t = t.getCause();
+        }
+        return false;
+    }
+
+    private static void sleepQuietly(int millis) {
+        try {
+            Thread.sleep(millis);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new SkipException("Interrupted during transient HTTP retry");
         }
     }
 

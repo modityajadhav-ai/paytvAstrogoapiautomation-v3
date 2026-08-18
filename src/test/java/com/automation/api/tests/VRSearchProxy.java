@@ -1,6 +1,7 @@
 package com.automation.api.tests;
 
 import com.automation.api.base.BaseTest;
+import com.automation.api.auth.VrgoGuestTokenSupport;
 import com.automation.api.config.Environment;
 import com.automation.api.util.AllureAttachmentUtils;
 import io.qameta.allure.Allure;
@@ -28,11 +29,13 @@ import static org.hamcrest.Matchers.notNullValue;
 @Feature("VR Search Proxy")
 public class VRSearchProxy extends BaseTest {
 
-    /** Upstream search provider may return this style of message when it has no data for the request. */
-    private static final String EMPTY_SOURCE_RESPONSE_MARKER = "response received from the source service";
+    private static final String EMPTY_RECOMMENDATION_FROM_SOURCE =
+            "Empty Recommendation response received from the source service";
 
-    /** Search proxy returns this when the use-case id is not configured for the environment. */
     private static final String USECASE_NOT_CONFIGURED_MARKER = "No Use Case found for id";
+
+    private static final String DATA_OR_USECASE_NOT_CONFIGURED_SKIP =
+            "data or use case is not configured for this environment";
 
     // ── Global content search — logged-in ─────────────────────────────────────
 
@@ -218,7 +221,7 @@ public class VRSearchProxy extends BaseTest {
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     private static void assertGlobalContentSearchResultsOrSkip(Response r) {
-        skipIfEmptySearchFromSourceService(r);
+        skipIfDataOrUsecaseNotConfigured(r);
         r.then()
                 .statusCode(200)
                 .body("contents", notNullValue())
@@ -226,48 +229,45 @@ public class VRSearchProxy extends BaseTest {
     }
 
     private static void assertSearchSuggesterResponseOrSkip(Response r) {
-        skipIfEmptySearchFromSourceService(r);
+        skipIfDataOrUsecaseNotConfigured(r);
         r.then().statusCode(200);
         Assert.assertFalse(r.asString().isBlank(), "Search suggester response body should not be empty.");
     }
 
     private static void assertSearchByUsecaseResultsOrSkip(Response r) {
-        skipIfEmptySearchFromSourceService(r);
-        skipIfUsecaseNotConfigured(r);
+        skipIfDataOrUsecaseNotConfigured(r);
         r.then()
                 .statusCode(200)
                 .body("data.results", notNullValue());
     }
 
     private static void assertSubgenrePreferenceResponseOrSkip(Response r) {
-        skipIfEmptySearchFromSourceService(r);
+        skipIfDataOrUsecaseNotConfigured(r);
         r.then().statusCode(200);
         Assert.assertFalse(r.asString().isBlank(), "Subgenre preference response body should not be empty.");
     }
 
-    private static void skipIfEmptySearchFromSourceService(Response r) {
-        String errorMessage = resolveSearchProxyErrorMessage(r);
-        if (isEmptyThirdPartySourceError(errorMessage)) {
-            throw new SkipException(
-                    "Skipped: third-party search source returned no data — "
-                            + errorMessage
-                            + ". This reflects upstream availability, not a search-proxy defect.");
+    private static void skipIfDataOrUsecaseNotConfigured(Response r) {
+        String message = resolveSearchProxyMessage(r);
+        if (message != null
+                && (message.contains(EMPTY_RECOMMENDATION_FROM_SOURCE)
+                || message.contains(USECASE_NOT_CONFIGURED_MARKER))) {
+            throw new SkipException(DATA_OR_USECASE_NOT_CONFIGURED_SKIP);
         }
     }
 
-    private static void skipIfUsecaseNotConfigured(Response r) {
+    private static String resolveSearchProxyMessage(Response r) {
         String body = r.asString();
-        if (body == null || !body.contains(USECASE_NOT_CONFIGURED_MARKER)) {
-            return;
+        if (body == null || body.isBlank()) {
+            return null;
         }
-        String detail = firstNonBlank(
+        String message = firstNonBlank(
                 r.jsonPath().getString("message"),
                 r.jsonPath().getString("errorMessage"),
                 r.jsonPath().getString("data.message"),
-                USECASE_NOT_CONFIGURED_MARKER
+                r.jsonPath().getString("data.errorMessage")
         );
-        throw new SkipException(
-                "Skipped: data or use case is not configured for this environment — " + detail);
+        return message != null ? message : body;
     }
 
     private static String firstNonBlank(String... values) {
@@ -276,34 +276,7 @@ public class VRSearchProxy extends BaseTest {
                 return v.strip();
             }
         }
-        return USECASE_NOT_CONFIGURED_MARKER;
-    }
-
-    private static boolean isEmptyThirdPartySourceError(String errorMessage) {
-        return errorMessage != null
-                && errorMessage.contains("Empty ")
-                && errorMessage.contains(EMPTY_SOURCE_RESPONSE_MARKER);
-    }
-
-    private static String resolveSearchProxyErrorMessage(Response r) {
-        String body = r.asString();
-        if (body == null || body.isBlank()) {
-            return null;
-        }
-        if (!body.contains("errorMessage")) {
-            return null;
-        }
-        String msg = r.jsonPath().getString("errorMessage");
-        if (msg != null && !msg.isBlank()) {
-            return msg.strip();
-        }
-        msg = r.jsonPath().getString("data.errorMessage");
-        if (msg != null && !msg.isBlank()) {
-            return msg.strip();
-        }
-        return body.contains(EMPTY_SOURCE_RESPONSE_MARKER)
-                ? "Empty response received from the source service"
-                : null;
+        return null;
     }
 
     private String resolveSuggesterKeyword() {
@@ -341,14 +314,10 @@ public class VRSearchProxy extends BaseTest {
     }
 
     private void requireGuestToken() {
-        if (isBlank(System.getProperty("vrgo.search.proxy.guest.bearer.token"))
-                && isBlank(System.getenv("VRGO_GUEST_BEARER_TOKEN"))
-                && isBlank(System.getProperty("vrgo.bearer.token"))
-                && isBlank(System.getenv("VRGO_BEARER_TOKEN"))) {
+        if (!VrgoGuestTokenSupport.canBootstrapGuestAuth(config)) {
             throw new SkipException(
-                    "Set BaseTest.VRGO_MANUAL_GUEST_BEARER_TOKEN, VRGO_GUEST_BEARER_TOKEN, "
-                            + "-Dvrgo.search.proxy.guest.bearer.token, or a logged-in bearer token "
-                            + "(VRGO_MANUAL_BEARER_TOKEN / VRGO_BEARER_TOKEN) for guest-user search tests.");
+                    "Set vrgo.search.proxy.guest.bearer.token in secrets, VRGO_GUEST_BEARER_TOKEN, "
+                            + "or enable guest browser recovery (vrgo.guest.browser.recovery.enabled=true).");
         }
     }
 

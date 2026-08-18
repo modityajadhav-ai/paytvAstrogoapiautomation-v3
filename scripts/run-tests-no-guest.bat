@@ -24,6 +24,7 @@ if not defined VRGO_REFRESH_TOKEN (
   )
 )
 
-rem %1 is the profile name — pass only extra Maven args (%2 onward) to avoid "Unknown lifecycle phase prod"
-call mvnw.cmd clean test -P%ENV_PROFILE% %2 %3 %4 %5 %6 %7 %8 %9
+rem Logged-in suite only — skips VRSearchProxy / LearnAction guest tests and guest browser recovery.
+rem Quote -D properties so PowerShell does not treat -Dsurefire as a switch.
+call mvnw.cmd clean test -P%ENV_PROFILE% "-Dsurefire.suiteXmlFiles=src/test/resources/testng-no-guest.xml" "-Dvrgo.guest.tests.enabled=false" %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%

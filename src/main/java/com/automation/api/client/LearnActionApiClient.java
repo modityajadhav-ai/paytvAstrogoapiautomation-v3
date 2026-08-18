@@ -1,10 +1,12 @@
 package com.automation.api.client;
 
 import com.automation.api.auth.VrgoAuthSupport;
+import com.automation.api.auth.VrgoGuestTokenSupport;
 import com.automation.api.config.EnvironmentConfig;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
 
+import java.util.LinkedHashMap;
 import java.util.Map;
 
 /**
@@ -20,7 +22,8 @@ import java.util.Map;
  */
 public class LearnActionApiClient extends BaseApiClient {
 
-    private static final String VRGO_HEADER_PREFIX = "vrgo.header.";
+    private static final String VRGO_HEADER_PREFIX  = "vrgo.header.";
+    private static final String GUEST_HEADER_PREFIX = "vrgo.search.proxy.guest.header.";
 
     private final String learnActionPath;
 
@@ -48,10 +51,40 @@ public class LearnActionApiClient extends BaseApiClient {
                 .post(learnActionPath);
     }
 
+    /**
+     * Same as {@link #postLearnActionRaw(String, Map)} but uses the guest bearer token and
+     * merges {@code vrgo.search.proxy.guest.header.*} overrides on top of {@code vrgo.header.*}.
+     */
+    public Response postLearnActionGuestRaw(String action, Map<String, Object> body) {
+        Map<String, String> guestOverrides = new LinkedHashMap<>(
+                environmentConfig.propertiesWithPrefix(GUEST_HEADER_PREFIX)
+        );
+        return vrgoGiven(true, guestOverrides)
+                .queryParam("action", action)
+                .body(body)
+                .when()
+                .post(learnActionPath);
+    }
+
     private RequestSpecification vrgoGiven() {
+        return vrgoGiven(false, null);
+    }
+
+    private RequestSpecification vrgoGiven(boolean useGuestToken, Map<String, String> headerOverrides) {
         RequestSpecification r = given().spec(spec);
 
-        String token = VrgoAuthSupport.getBearerToken(environmentConfig);
+        String token;
+        if (useGuestToken) {
+            token = VrgoGuestTokenSupport.getGuestBearerToken(environmentConfig);
+            if (token == null || token.isBlank()) {
+                throw new IllegalStateException(
+                        "Guest bearer token unavailable. Set vrgo.search.proxy.guest.bearer.token in secrets, "
+                                + "VRGO_GUEST_BEARER_TOKEN, or enable guest browser recovery."
+                );
+            }
+        } else {
+            token = VrgoAuthSupport.getBearerToken(environmentConfig);
+        }
         if (token == null || token.isBlank()) {
             throw new IllegalStateException(
                     "Set vrgo.bearer.token (e.g. via test base setup), VRGO_BEARER_TOKEN, or -Dvrgo.bearer.token."
@@ -71,8 +104,17 @@ public class LearnActionApiClient extends BaseApiClient {
         }
         r = r.header("x-api-key", apiKey);
 
-        Map<String, String> staticHeaders = environmentConfig.propertiesWithPrefix(VRGO_HEADER_PREFIX);
-        for (Map.Entry<String, String> e : staticHeaders.entrySet()) {
+        Map<String, String> headers = new LinkedHashMap<>(
+                environmentConfig.propertiesWithPrefix(VRGO_HEADER_PREFIX)
+        );
+        if (headerOverrides != null) {
+            for (Map.Entry<String, String> e : headerOverrides.entrySet()) {
+                if (e.getValue() != null && !e.getValue().isBlank()) {
+                    headers.put(e.getKey(), e.getValue().strip());
+                }
+            }
+        }
+        for (Map.Entry<String, String> e : headers.entrySet()) {
             r = r.header(e.getKey(), e.getValue());
         }
         return r;

@@ -11,5 +11,6 @@ if errorlevel 1 (
   exit /b 1
 )
 
-echo Done. Configure vrgo.auth.username and vrgo.auth.password in secrets\vrgo-auth.local.properties
+echo Done. Configure per-environment secrets, e.g. secrets\vrgo-auth.test.local.properties
+echo   vrgo.auth.username / vrgo.auth.password for browser auto-recovery
 exit /b 0

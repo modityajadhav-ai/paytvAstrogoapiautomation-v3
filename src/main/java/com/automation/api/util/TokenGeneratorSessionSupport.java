@@ -3,6 +3,7 @@ package com.automation.api.util;
 import com.automation.api.auth.VrgoTokenHolder;
 import com.automation.api.config.EnvironmentConfig;
 import com.fasterxml.jackson.core.type.TypeReference;
+import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
 
 import java.nio.charset.StandardCharsets;
@@ -12,8 +13,10 @@ import java.util.Map;
 
 /**
  * Aligns token-generator {@code sessionInfo} with the active bearer JWT.
- * Entitlements are kept from {@code session-info.json} unless
- * {@code vrgo.token.generator.entitlements} is explicitly set.
+ * {@code deviceId} / {@code deviceFamilyId} and session ids are taken from the JWT so the body
+ * matches {@code device_id} and other synced headers. Entitlements come from
+ * {@code vrgo.token.generator.entitlements}, then {@code vrgo.header.entitlements}, then the
+ * session-info resource file.
  */
 public final class TokenGeneratorSessionSupport {
 
@@ -52,22 +55,40 @@ public final class TokenGeneratorSessionSupport {
             if (accountId != null && !accountId.toString().isBlank()) {
                 account.put("accountId", accountId.toString());
             }
-        }
 
-        String entitlementsJson = config.getProperty("vrgo.token.generator.entitlements");
-        if (entitlementsJson != null && !entitlementsJson.isBlank()) {
-            try {
-                List<Map<String, Object>> entitlements = MAPPER.readValue(
-                        entitlementsJson.strip(), new TypeReference<>() {}
-                );
-                enriched.put("entitlements", entitlements);
-            } catch (Exception e) {
-                throw new IllegalStateException(
-                        "Failed to parse vrgo.token.generator.entitlements: " + e.getMessage(), e
-                );
+            Map<String, Object> device = (Map<String, Object>) enriched.computeIfAbsent(
+                    "device", key -> new LinkedHashMap<>()
+            );
+            Object deviceId = claims.get("deviceId");
+            if (deviceId != null && !deviceId.toString().isBlank()) {
+                device.put("deviceId", deviceId.toString());
+            }
+            Object deviceFamilyId = claims.get("deviceFamilyId");
+            if (deviceFamilyId != null && !deviceFamilyId.toString().isBlank()) {
+                device.put("deviceFamilyId", deviceFamilyId.toString());
             }
         }
+
+        applyConfiguredEntitlements(enriched, config);
         return enriched;
+    }
+
+    private static void applyConfiguredEntitlements(Map<String, Object> enriched, EnvironmentConfig config) {
+        String entitlementsJson = firstNonBlank(
+                System.getProperty("vrgo.token.generator.entitlements"),
+                config.getProperty("vrgo.token.generator.entitlements")
+        );
+        if (entitlementsJson == null || entitlementsJson.isBlank()) {
+            return;
+        }
+        try {
+            JsonNode entitlements = MAPPER.readTree(entitlementsJson.strip());
+            enriched.put("entitlements", MAPPER.convertValue(entitlements, Object.class));
+        } catch (Exception e) {
+            throw new IllegalStateException(
+                    "Failed to parse vrgo.token.generator.entitlements: " + e.getMessage(), e
+            );
+        }
     }
 
     public static String entitlementHashFromBearer() {
@@ -77,6 +98,52 @@ public final class TokenGeneratorSessionSupport {
         }
         Object hash = claims.get("entitlementHash");
         return hash != null ? hash.toString() : null;
+    }
+
+    /**
+     * Returns a skip reason when the active JWT was not issued for the static session-info snapshot.
+     */
+    public static String describeSessionMismatch(EnvironmentConfig config) {
+        String jwtHash = entitlementHashFromBearer();
+        if (jwtHash == null || jwtHash.isBlank()) {
+            return null;
+        }
+        if (firstNonBlank(
+                System.getProperty("vrgo.token.generator.entitlements"),
+                config.getProperty("vrgo.token.generator.entitlements")
+        ) != null) {
+            return null;
+        }
+        String capturedHash = config.getProperty("vrgo.token.generator.session.entitlementhash");
+        if (capturedHash == null || capturedHash.isBlank()) {
+            return null;
+        }
+        if (capturedHash.equalsIgnoreCase(jwtHash)) {
+            return null;
+        }
+        String jwtDeviceId = claimString("deviceId");
+        String capturedDeviceId = config.getProperty("vrgo.token.generator.session.device.id");
+        String deviceHint = "";
+        if (capturedDeviceId != null && jwtDeviceId != null
+                && !capturedDeviceId.equalsIgnoreCase(jwtDeviceId)) {
+            deviceHint = " JWT deviceId=" + jwtDeviceId + " but session-info was captured for device "
+                    + capturedDeviceId + ".";
+        }
+        return "Token-generator session snapshot does not match the active bearer JWT: JWT entitlementHash="
+                + jwtHash + " but session-info was captured with " + capturedHash + "." + deviceHint
+                + " Postman works when bearer, entitlementhash, and sessionInfo.entitlements all come from the"
+                + " same browser request. Update secrets/vrgo-auth.<env>.local.properties with a refresh_token"
+                + " from that browser login, copy sessionInfo.entitlements into vrgo.token.generator.entitlements"
+                + " in the secrets file, then run scripts/reset-auth-cache.bat.";
+    }
+
+    private static String claimString(String claimName) {
+        Map<String, Object> claims = parseJwtClaims(resolveBearerToken());
+        if (claims == null) {
+            return null;
+        }
+        Object value = claims.get(claimName);
+        return value != null ? value.toString() : null;
     }
 
     private static Map<String, Object> parseJwtClaims(String jwt) {
@@ -127,5 +194,17 @@ public final class TokenGeneratorSessionSupport {
         }
         token = System.getenv("VRGO_BEARER_TOKEN");
         return token != null && !token.isBlank() ? token : null;
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value;
+            }
+        }
+        return null;
     }
 }

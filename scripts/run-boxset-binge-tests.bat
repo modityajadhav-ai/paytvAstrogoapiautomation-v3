@@ -14,9 +14,6 @@ if not defined VRGO_REFRESH_TOKEN (
       if not exist "%CACHE_FILE%" (
         if not exist "vrgo-token-cache.json" (
           echo [ERROR] No VRGO refresh token configured for profile %ENV_PROFILE%.
-          echo   CI: set VRGO_REFRESH_TOKEN_%ENV_PROFILE% or VRGO_REFRESH_TOKEN
-          echo   Local: copy secrets\vrgo-auth.%ENV_PROFILE%.local.properties.example
-          echo          to secrets\vrgo-auth.%ENV_PROFILE%.local.properties
           exit /b 1
         )
       )
@@ -24,6 +21,6 @@ if not defined VRGO_REFRESH_TOKEN (
   )
 )
 
-rem %1 is the profile name — pass only extra Maven args (%2 onward) to avoid "Unknown lifecycle phase prod"
-call mvnw.cmd clean test -P%ENV_PROFILE% %2 %3 %4 %5 %6 %7 %8 %9
+rem Ordered suite only — do not use -Dtest= (alphabetical method order breaks DELETE-first flow).
+call mvnw.cmd clean test -P%ENV_PROFILE% "-Dsurefire.suiteXmlFiles=src/test/resources/testng-boxset-binge.xml" %2 %3 %4 %5 %6 %7 %8 %9
 exit /b %ERRORLEVEL%

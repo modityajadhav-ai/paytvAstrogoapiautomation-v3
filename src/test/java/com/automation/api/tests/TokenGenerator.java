@@ -32,10 +32,10 @@ import static org.hamcrest.Matchers.notNullValue;
  * UWM uses {@code vrgo.token.generator.uwm.*} with fallback to CTG values.
  * resource configured by {@code vrgo.token.generator.session.info.resource}.
  * <p>
- * Intended for PROD ({@code -Denv=prod}). Bearer token and {@code vrgo.header.*} must match the
- * active account/session; refresh {@code VRGO_MANUAL_BEARER_TOKEN} when the JWT expires.
- * {@code sessionInfo.entitlements} in {@code token-generator/session-info.json} must match the
- * active account entitlements (copy from a working browser request when entitlements change).
+ * Bearer token and {@code vrgo.header.*} must match the active account/session (refresh via
+ * {@code secrets/vrgo-auth.<env>.local.properties} or CI refresh token when the JWT expires).
+ * {@code sessionInfo} comes from {@code vrgo.token.generator.session.info.resource}; entitlements
+ * must match the active account (copy from a working browser request when entitlements change).
  */
 @Feature("Token Generator")
 public class TokenGenerator extends BaseTest {
@@ -83,7 +83,7 @@ public class TokenGenerator extends BaseTest {
         boolean isStatic = Boolean.parseBoolean(
                 config.getProperty("vrgo.token.generator.is.static", "false")
         );
-        String laContentId = config.getProperty("vrgo.token.generator.uwm.la.content.id", "5027");
+        String laContentId = config.getProperty("vrgo.token.generator.uwm.la.content.id", "2507");
 
         Allure.parameter("contentId", contentId);
         Allure.parameter("contentType", contentType);
@@ -215,7 +215,7 @@ public class TokenGenerator extends BaseTest {
 
     private String resolveCtgContentType() {
         return config.getProperty("vrgo.token.generator.ctg.content.type",
-                config.getProperty("vrgo.token.generator.content.type", "tv_show")).strip();
+                config.getProperty("vrgo.token.generator.content.type", "channel")).strip();
     }
 
     private String resolveUwmContentId() {
@@ -243,10 +243,12 @@ public class TokenGenerator extends BaseTest {
         if (tokenGeneratorApi == null) {
             throw new SkipException("Configure vrgo.base.url in environments/<env>.properties to run this test.");
         }
-        if (isBlank(System.getenv("VRGO_BEARER_TOKEN")) && isBlank(System.getProperty("vrgo.bearer.token"))) {
-            throw new SkipException(
-                    "Set BaseTest.VRGO_MANUAL_BEARER_TOKEN, or VRGO_BEARER_TOKEN / -Dvrgo.bearer.token, to call the VRGO API."
-            );
+        if (!isVrgoAuthConfigured()) {
+            throw new SkipException(VRGO_AUTH_SKIP_MESSAGE);
+        }
+        String sessionMismatch = TokenGeneratorSessionSupport.describeSessionMismatch(config);
+        if (sessionMismatch != null) {
+            throw new SkipException(sessionMismatch);
         }
         if (isBlank(System.getenv("VRGO_X_API_KEY"))
                 && isBlank(System.getProperty("vrgo.x.api.key"))

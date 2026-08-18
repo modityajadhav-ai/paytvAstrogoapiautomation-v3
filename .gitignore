@@ -27,7 +27,10 @@ scripts/.env
 
 # VRGO OAuth — never commit real tokens
 secrets/vrgo-auth.local.properties
-secrets/vrgo-auth.local.propertiescls
-secrets/vrgo-auth.local.properties.example
+secrets/vrgo-auth.*.local.properties
+!secrets/vrgo-auth*.example
 vrgo-token-cache.json
+vrgo-token-cache-*.json
+vrgo-guest-token-cache.json
+vrgo-guest-token-cache-*.json
 src/test/resources/token-generator/vrgo-token.json

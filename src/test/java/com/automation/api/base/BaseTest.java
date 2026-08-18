@@ -1,6 +1,7 @@
 package com.automation.api.base;
 
 import com.automation.api.auth.VrgoAuthSecretsLoader;
+import com.automation.api.auth.VrgoGuestTokenHolder;
 import com.automation.api.auth.VrgoTokenHolder;
 import com.automation.api.client.AuthApiClient;
 import com.automation.api.client.ConfigServiceApiClient;
@@ -32,7 +33,8 @@ import java.nio.charset.StandardCharsets;
  * Bootstraps configuration and API clients once per suite.
  * <p>
  * VRGO bearer tokens are managed automatically by {@link VrgoTokenHolder} — no manual paste required.
- * Configure {@code VRGO_REFRESH_TOKEN} in Jenkins/GitLab CI, or {@code secrets/vrgo-auth.local.properties} locally.
+ * Configure per-environment secrets in {@code secrets/vrgo-auth.<env>.local.properties}, or
+ * {@code VRGO_REFRESH_TOKEN_<ENV>} / {@code VRGO_REFRESH_TOKEN} in Jenkins/GitLab CI.
  */
 @Listeners(com.automation.api.listeners.TestListener.class)
 public abstract class BaseTest {
@@ -43,7 +45,7 @@ public abstract class BaseTest {
     public static String VRGO_MANUAL_X_API_KEY = "";
 
     /**
-     * Optional guest bearer token for VR Search Proxy guest-user tests.
+     * Optional bootstrap guest access JWT (expires ~300s). Auto-renewed via guest browser recovery when Playwright is installed.
      */
     public static String VRGO_MANUAL_GUEST_BEARER_TOKEN = "";
 
@@ -66,7 +68,7 @@ public abstract class BaseTest {
     protected static TokenGeneratorApiClient tokenGeneratorApi;
 
     protected static final String VRGO_AUTH_SKIP_MESSAGE =
-            "Configure VRGO_REFRESH_TOKEN (Jenkins/GitLab CI) or secrets/vrgo-auth.local.properties (local dev).";
+            "Configure VRGO_REFRESH_TOKEN_<ENV> or secrets/vrgo-auth.<env>.local.properties for the active profile.";
 
     protected static boolean isVrgoAuthConfigured() {
         return config != null && com.automation.api.auth.VrgoAuthSupport.hasBearerCredential(config);
@@ -81,6 +83,9 @@ public abstract class BaseTest {
 
         config = EnvironmentConfig.load();
         VrgoTokenHolder.initialize(config);
+        if (isGuestTestsEnabled()) {
+            VrgoGuestTokenHolder.initialize(config);
+        }
 
         userApi = new UserApiClient(config);
         authApi = new AuthApiClient(config);
@@ -131,5 +136,26 @@ public abstract class BaseTest {
         if (VRGO_MANUAL_GUEST_BEARER_TOKEN != null && !VRGO_MANUAL_GUEST_BEARER_TOKEN.isBlank()) {
             System.setProperty("vrgo.search.proxy.guest.bearer.token", VRGO_MANUAL_GUEST_BEARER_TOKEN.strip());
         }
+    }
+
+    private static boolean isGuestTestsEnabled() {
+        String flag = firstNonBlank(
+                System.getProperty("vrgo.guest.tests.enabled"),
+                System.getenv("VRGO_GUEST_TESTS_ENABLED"),
+                "true"
+        );
+        return !"false".equalsIgnoreCase(flag);
+    }
+
+    private static String firstNonBlank(String... values) {
+        if (values == null) {
+            return null;
+        }
+        for (String value : values) {
+            if (value != null && !value.isBlank()) {
+                return value.strip();
+            }
+        }
+        return null;
     }
 }

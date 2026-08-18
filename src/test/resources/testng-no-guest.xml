@@ -2,7 +2,7 @@
 
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
 
-<suite name="API Automation Suite" verbose="1">
+<suite name="API Automation Suite (no guest)" verbose="1">
 
     <listeners>
 
@@ -10,7 +10,7 @@
 
     </listeners>
 
-    <test name="API Regression - Run 1" preserve-order="true">
+    <test name="API Regression - Run 1 (logged-in only)" preserve-order="true">
 
         <classes>
 
@@ -45,11 +45,22 @@
                 </methods>
             </class>
 
-            <class name="com.automation.api.tests.LearnAction"/>
+            <class name="com.automation.api.tests.LearnAction">
+                <methods>
+                    <exclude name="learnAction_postAction_guest_returns200"/>
+                </methods>
+            </class>
 
             <class name="com.automation.api.tests.RecommendationProxy"/>
 
-            <class name="com.automation.api.tests.VRSearchProxy"/>
+            <class name="com.automation.api.tests.VRSearchProxy">
+                <methods>
+                    <exclude name="globalContentSearch_guestUser_returnsResults"/>
+                    <exclude name="searchSuggester_guestUser_returnsResults"/>
+                    <exclude name="searchByUsecase_guestUser_returnsResults"/>
+                    <exclude name="subgenrePreference_guestUser_returnsResults"/>
+                </methods>
+            </class>
 
             <class name="com.automation.api.tests.LockChannel"/>
 
@@ -70,4 +81,3 @@
     </test>
 
 </suite>
-

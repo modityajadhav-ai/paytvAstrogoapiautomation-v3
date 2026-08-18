@@ -14,10 +14,11 @@ import java.nio.file.Paths;
 /**
  * Thread-safe bearer token manager for long TestNG suites (1000+ tests / 15+ minutes).
  * <p>
- * Credential sources:
+ * Credential sources (per active {@code env} profile):
  * <ol>
- *   <li>{@code secrets/vrgo-auth.local.properties} or {@code VRGO_REFRESH_TOKEN} when updated (wins over stale cache)</li>
- *   <li>Rotated token in {@code vrgo-token-cache.json} from a previous successful run</li>
+ *   <li>{@code secrets/vrgo-auth.<env>.local.properties} or {@code VRGO_REFRESH_TOKEN_<ENV>} when updated (wins over stale cache)</li>
+ *   <li>Legacy {@code secrets/vrgo-auth.local.properties} when no env-specific file exists</li>
+ *   <li>Rotated token in {@code vrgo-token-cache-<env>.json} from a previous successful run</li>
  * </ol>
  * Access tokens refresh automatically ~90s before JWT expiry. Rotated refresh tokens are written back to the cache.
  */
@@ -154,7 +155,7 @@ public final class VrgoTokenHolder {
 
     private static String resolveSeedRefreshToken() {
         return firstNonBlank(
-                System.getenv("VRGO_REFRESH_TOKEN"),
+                VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_REFRESH_TOKEN"),
                 System.getProperty("vrgo.refresh.token")
         );
     }
@@ -342,16 +343,19 @@ public final class VrgoTokenHolder {
     }
 
     private static String buildMissingCredentialMessage() {
+        com.automation.api.config.Environment env = com.automation.api.config.Environment.current();
+        String envName = env.name();
         Path secrets = VrgoAuthSecretsLoader.resolveLocalSecretsPath();
         if (java.nio.file.Files.isRegularFile(secrets)) {
-            return "No VRGO refresh token. Edit " + secrets.toAbsolutePath()
+            return "No VRGO refresh token for " + envName + ". Edit " + secrets.toAbsolutePath()
                     + " and set vrgo.refresh.token=your_token (same line, no quotes). "
-                    + "Or set VRGO_REFRESH_TOKEN env var.";
+                    + "Or set VRGO_REFRESH_TOKEN_" + envName + " / VRGO_REFRESH_TOKEN env var.";
         }
-        return "No VRGO refresh token. Configure ONE of: "
-                + "VRGO_REFRESH_TOKEN (Jenkins/GitLab CI), "
-                + "secrets/vrgo-auth.local.properties (local), "
-                + "or vrgo-token-cache.json from a previous successful run.";
+        return "No VRGO refresh token for " + envName + ". Configure ONE of: "
+                + "VRGO_REFRESH_TOKEN_" + envName + " or VRGO_REFRESH_TOKEN (CI), "
+                + VrgoAuthSecretsLoader.environmentSecretsPath() + " (local), "
+                + "legacy secrets/vrgo-auth.local.properties, "
+                + "or the env-specific vrgo-token-cache-<env>.json from a previous successful run.";
     }
 
     private static long parseLong(String value, long defaultValue) {

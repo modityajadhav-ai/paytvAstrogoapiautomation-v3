@@ -28,6 +28,11 @@ public final class VrgoJwtUtils {
         return payload != null && payload.contains("\"profileId\"");
     }
 
+    public static boolean isGuestToken(String jwt) {
+        String payload = decodePayloadJson(jwt);
+        return payload != null && payload.contains("\"isGuest\":true");
+    }
+
     public static boolean isRefreshTokenJwt(String jwt) {
         String payload = decodePayloadJson(jwt);
         return payload != null && payload.contains("\"refresh\"");

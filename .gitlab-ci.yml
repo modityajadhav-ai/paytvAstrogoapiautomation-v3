@@ -1,6 +1,6 @@
 # GitLab CI - API Automation (TestNG + Maven)
-# Required CI/CD variable: VRGO_REFRESH_TOKEN (masked)
-# Optional: VRGO_TEST_USERNAME, VRGO_TEST_PASSWORD, TEST_ENV
+# Required CI/CD variable (per job): VRGO_REFRESH_TOKEN or VRGO_REFRESH_TOKEN_<ENV> (masked)
+# Optional: VRGO_AUTH_USERNAME_<ENV>, VRGO_AUTH_PASSWORD_<ENV>, TEST_ENV
 
 stages:
   - test

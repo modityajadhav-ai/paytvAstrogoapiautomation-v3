@@ -40,6 +40,9 @@ import static org.hamcrest.Matchers.is;
 @Feature("Watch again")
 public class WatchAgain extends BaseTest {
 
+    private static final String CLOSE_SERIES_LAST_TVSHOW_CONTENT_ID =
+            "vrgo.cw.add.close.series.last.tvshow.content.id";
+
     @Test(description = "Clear first CW page so completed-playback assertions are not affected by leftover rows")
     @Story("GET/DELETE continue-watch (prepare)")
     public void watchAgain_prepare_clearContinueWatchFirstPage() {
@@ -68,7 +71,7 @@ public class WatchAgain extends BaseTest {
         requireWatchAgainPrerequisites();
 
         String movieId = CwAddContentKind.MOVIE.contentId(config);
-        String tvId = CwAddContentKind.TV_SHOW.contentId(config);
+        String tvId = contentIdForWatchAgain(CwAddContentKind.TV_SHOW);
         if (isBlank(movieId) || movieId.startsWith("REPLACE") || isBlank(tvId) || tvId.startsWith("REPLACE")) {
             throw new SkipException("Configure vrgo.cw.add.movie.content.id and vrgo.cw.add.tvshow.content.id.");
         }
@@ -100,7 +103,7 @@ public class WatchAgain extends BaseTest {
         requireWatchAgainPrerequisites();
 
         String movieId = CwAddContentKind.MOVIE.contentId(config);
-        String tvId = CwAddContentKind.TV_SHOW.contentId(config);
+        String tvId = contentIdForWatchAgain(CwAddContentKind.TV_SHOW);
         if (isBlank(movieId) || movieId.startsWith("REPLACE") || isBlank(tvId) || tvId.startsWith("REPLACE")) {
             throw new SkipException("Configure vrgo.cw.add.movie.content.id and vrgo.cw.add.tvshow.content.id.");
         }
@@ -151,7 +154,7 @@ public class WatchAgain extends BaseTest {
             throw new SkipException("Set vrgo.header.cp_id in the active environment file.");
         }
 
-        String contentId = kind.contentId(config);
+        String contentId = contentIdForWatchAgain(kind);
         if (isBlank(contentId) || contentId.startsWith("REPLACE")) {
             throw new SkipException(
                     "Set " + kind.propertyPrefix() + "content.id in environments/<env>.properties for " + kind + ".");
@@ -240,6 +243,16 @@ public class WatchAgain extends BaseTest {
         }
         String c = config.getProperty("vrgo.cw.recent.series.id");
         return c == null ? "" : c.strip();
+    }
+
+    private String contentIdForWatchAgain(CwAddContentKind kind) {
+        if (kind == CwAddContentKind.TV_SHOW) {
+            String closeSeriesLastEpisode = config.getProperty(CLOSE_SERIES_LAST_TVSHOW_CONTENT_ID);
+            if (closeSeriesLastEpisode != null && !closeSeriesLastEpisode.isBlank()) {
+                return closeSeriesLastEpisode.strip();
+            }
+        }
+        return kind.contentId(config);
     }
 
     private Response pollWatchAgainUntilMovieAndSeriesPresent(

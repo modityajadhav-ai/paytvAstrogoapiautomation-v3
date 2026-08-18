@@ -1,6 +1,7 @@
 package com.automation.api.tests;
 
 import com.automation.api.base.BaseTest;
+import com.automation.api.auth.VrgoGuestTokenSupport;
 import com.automation.api.config.Environment;
 import com.automation.api.util.AllureAttachmentUtils;
 import com.automation.api.util.JsonUtils;
@@ -46,6 +47,9 @@ public class LearnAction extends BaseTest {
 
     /** Latest EPG eventId resolved in {@link #resolveLearnActionContentId()} and shared across all actions. */
     private String learnActionContentId;
+
+    /** Guest EPG eventId resolved lazily for guest-user tests. */
+    private String guestLearnActionContentId;
 
     // ── Setup ─────────────────────────────────────────────────────────────────
 
@@ -153,6 +157,32 @@ public class LearnAction extends BaseTest {
                 .body("message", equalTo(SUCCESS_MESSAGE));
     }
 
+    @Test(
+            dataProvider = "learnActions",
+            groups = "guest",
+            description = "POST /learn-action/v1/learn?action=<action> — guest user posts a learn action event"
+    )
+    @Story("POST /learn-action/v1/learn (guest)")
+    public void learnAction_postAction_guest_returns200(String action) {
+        requireGuestPrerequisites();
+
+        String contentId = resolveGuestLearnActionContentId();
+        Allure.parameter("action",      action);
+        Allure.parameter("contentId",   contentId);
+        Allure.parameter("environment", Environment.current().name());
+        Allure.parameter("userType",    "guest");
+
+        Map<String, Object> body = buildLearnActionBody(contentId);
+
+        Response r = learnActionApi.postLearnActionGuestRaw(action, body);
+        AllureAttachmentUtils.attachJson("learn-action-guest-" + action + "-response", r.asString());
+
+        r.then()
+                .statusCode(200)
+                .body("status", equalTo(true))
+                .body("message", equalTo(SUCCESS_MESSAGE));
+    }
+
     // ── helpers ───────────────────────────────────────────────────────────────
 
     /**
@@ -160,6 +190,10 @@ public class LearnAction extends BaseTest {
      * in the reference curl command when a property is absent.
      */
     private Map<String, Object> buildLearnActionBody() {
+        return buildLearnActionBody(learnActionContentId);
+    }
+
+    private Map<String, Object> buildLearnActionBody(String contentId) {
         int sessionDuration = readIntProperty("vrgo.learn.action.session.duration", 4);
         int lastPosition    = readIntProperty("vrgo.learn.action.last.position",    7076);
         String refUseCase   = firstNonBlank(
@@ -173,7 +207,7 @@ public class LearnAction extends BaseTest {
         primaryGenre.replaceAll(String::strip);
 
         Map<String, Object> body = new LinkedHashMap<>();
-        body.put("contentId",       learnActionContentId);
+        body.put("contentId",       contentId);
         body.put("contentType",     "channelDay");
         body.put("sessionDuration", sessionDuration);
         body.put("lastPosition",    lastPosition);
@@ -196,6 +230,73 @@ public class LearnAction extends BaseTest {
             throw new SkipException(
                     "Set vrgo.x.api.key in environments/<env>.properties, BaseTest.VRGO_MANUAL_X_API_KEY, or VRGO_X_API_KEY / -Dvrgo.x.api.key.");
         }
+    }
+
+    private void requireGuestPrerequisites() {
+        if (learnActionApi == null || contentDetailApi == null) {
+            throw new SkipException("Configure vrgo.base.url in environments/<env>.properties to run this test.");
+        }
+        if (!VrgoGuestTokenSupport.canBootstrapGuestAuth(config)) {
+            throw new SkipException(
+                    "Set vrgo.search.proxy.guest.bearer.token in secrets, VRGO_GUEST_BEARER_TOKEN, "
+                            + "or enable guest browser recovery (vrgo.guest.browser.recovery.enabled=true).");
+        }
+        if (isBlank(System.getenv("VRGO_X_API_KEY"))
+                && isBlank(System.getProperty("vrgo.x.api.key"))
+                && isBlank(config.getProperty("vrgo.x.api.key"))) {
+            throw new SkipException(
+                    "Set vrgo.x.api.key in environments/<env>.properties, BaseTest.VRGO_MANUAL_X_API_KEY, or VRGO_X_API_KEY / -Dvrgo.x.api.key.");
+        }
+    }
+
+    private String resolveGuestLearnActionContentId() {
+        if (guestLearnActionContentId != null) {
+            return guestLearnActionContentId;
+        }
+
+        String override = firstNonBlank(
+                config.getProperty("vrgo.learn.action.event.id"),
+                System.getProperty("vrgo.learn.action.event.id"),
+                config.getProperty("vrgo.learn.action.channel.day.content.id")
+        );
+        if (isConfiguredId(override)) {
+            guestLearnActionContentId = override.strip();
+            return guestLearnActionContentId;
+        }
+
+        String channelId = firstNonBlank(
+                config.getProperty("vrgo.learn.action.channel.id"),
+                config.getProperty("vrgo.content.detail.channel.day.channel.id"),
+                config.getProperty("vrgo.content.detail.channel.id")
+        );
+        if (!isConfiguredId(channelId)) {
+            throw new SkipException(
+                    "Set vrgo.learn.action.event.id (static EPG eventId) or a channel id "
+                            + "for guest learn-action tests.");
+        }
+
+        long epoch = pickEpochMs();
+        Response channelDayResponse = contentDetailApi.getChannelDayRawGuest(
+                contentDetailApi.getChannelDayPathTemplate(),
+                channelId.strip(),
+                epoch
+        );
+        AllureAttachmentUtils.attachJson("learn-action-guest-setup-channel-day", channelDayResponse.asString());
+        channelDayResponse.then().statusCode(200);
+
+        List<String> eventIds = extractEventIdsFromChannelDay(channelDayResponse);
+        if (eventIds.isEmpty()) {
+            throw new SkipException(
+                    "No eventId values found in guest channel-day response for channel " + channelId.strip());
+        }
+
+        boolean pickLatest = !"first".equalsIgnoreCase(
+                firstNonBlank(config.getProperty("vrgo.learn.action.event.pick"), "last").strip()
+        );
+        guestLearnActionContentId = pickLatest
+                ? eventIds.get(eventIds.size() - 1)
+                : eventIds.get(0);
+        return guestLearnActionContentId;
     }
 
     /**

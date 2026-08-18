@@ -28,7 +28,8 @@ public final class VrgoBrowserRecoveryVerifier {
         System.out.println("[VrgoBrowserRecoveryVerifier] headed=" + isHeadedMode());
 
         if (!VrgoBrowserAuthRecovery.isConfigured()) {
-            System.err.println("Set vrgo.auth.username and vrgo.auth.password in secrets/vrgo-auth.local.properties");
+            System.err.println("Set vrgo.auth.username and vrgo.auth.password in "
+                    + VrgoAuthSecretsLoader.environmentSecretsPath());
             System.exit(1);
         }
 

@@ -1,5 +1,6 @@
 package com.automation.api.auth;
 
+import com.automation.api.config.Environment;
 import com.automation.api.config.EnvironmentConfig;
 import com.fasterxml.jackson.databind.JsonNode;
 import com.fasterxml.jackson.databind.ObjectMapper;
@@ -11,6 +12,7 @@ import com.microsoft.playwright.Page;
 import com.microsoft.playwright.Playwright;
 import com.microsoft.playwright.Response;
 import com.microsoft.playwright.options.Geolocation;
+import com.microsoft.playwright.options.HttpCredentials;
 import com.microsoft.playwright.options.LoadState;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -18,7 +20,9 @@ import org.slf4j.LoggerFactory;
 import java.nio.file.Path;
 import java.nio.file.Paths;
 import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -58,7 +62,12 @@ public final class VrgoBrowserAuthRecovery {
             return null;
         }
 
-        String webOrigin = config.getProperty("vrgo.header.origin", "https://web.vrgo.test.xp.irdeto.com");
+        String browserUrl = firstNonBlank(
+                config.getProperty("vrgo.auth.browser.url"),
+                config.getProperty("vrgo.header.origin"),
+                "https://web.vrgo.test.xp.irdeto.com/hubMovies"
+        );
+        String webOrigin = extractOrigin(browserUrl);
         String authTokenPath = "/v1/auth/token";
         boolean evictOnLimit = evictDeviceOnLimitEnabled();
         boolean headed = isHeadedMode();
@@ -82,16 +91,7 @@ public final class VrgoBrowserAuthRecovery {
                                     "--disable-popup-blocking"
                             ))
             );
-            BrowserContext context = browser.newContext(
-                    new Browser.NewContextOptions()
-                            .setUserAgent(config.getProperty(
-                                    "vrgo.header.user-agent",
-                                    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
-                                            + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
-                            ))
-                            .setGeolocation(new Geolocation(3.1390, 101.6869))
-                            .setPermissions(List.of("geolocation"))
-            );
+            BrowserContext context = newBrowserContext(browser, config, false);
             context.addInitScript(
                     "(() => {"
                             + "if (navigator.geolocation) {"
@@ -109,8 +109,8 @@ public final class VrgoBrowserAuthRecovery {
             Page page = context.newPage();
             page.onResponse(response -> captureRefreshFromResponse(response, authTokenPath, capturedRefresh));
 
-            LOG.info("Browser auth recovery: opening {} (headed={})", webOrigin, headed);
-            page.navigate(webOrigin, new Page.NavigateOptions().setTimeout(timeoutMs));
+            LOG.info("Browser auth recovery: opening {} (headed={})", browserUrl, headed);
+            page.navigate(browserUrl, new Page.NavigateOptions().setTimeout(timeoutMs));
             page.waitForLoadState(LoadState.DOMCONTENTLOADED);
             page.waitForTimeout(2_000);
             dismissAllLandingPopups(page);
@@ -147,6 +147,321 @@ public final class VrgoBrowserAuthRecovery {
             LOG.error("Browser auth recovery failed: {}", e.getMessage(), e);
             return null;
         }
+    }
+
+    /**
+     * Headless "browse as guest" — captures the short-lived guest Bearer JWT from outgoing VRGO API
+     * requests (guest sessions do not call {@code POST /v1/auth/token}).
+     */
+    public static String recoverGuestAccessToken(EnvironmentConfig config) {
+        if (!isEnabled()) {
+            LOG.warn("Guest browser recovery disabled (vrgo.auth.browser.recovery.enabled=false)");
+            return null;
+        }
+
+        String[] browserUrls = resolveGuestBrowserUrls(config);
+        boolean headed = isHeadedMode();
+        long timeoutMs = parseLong(
+                firstNonBlank(
+                        System.getProperty("vrgo.auth.browser.timeout.ms"),
+                        System.getenv("VRGO_BROWSER_AUTH_TIMEOUT_MS")
+                ),
+                180_000L
+        );
+
+        AtomicReference<String> capturedAccess = new AtomicReference<>();
+
+        try (Playwright playwright = Playwright.create()) {
+            Browser browser = playwright.chromium().launch(
+                    new BrowserType.LaunchOptions()
+                            .setHeadless(!headed)
+                            .setArgs(Arrays.asList(
+                                    "--disable-notifications",
+                                    "--disable-popup-blocking"
+                            ))
+            );
+            BrowserContext context = newBrowserContext(browser, config, true);
+            context.addInitScript(
+                    "(() => {"
+                            + "if (navigator.geolocation) {"
+                            + "  navigator.geolocation.getCurrentPosition = (ok) => ok({"
+                            + "    coords: { latitude: 3.139, longitude: 101.687, accuracy: 50 },"
+                            + "    timestamp: Date.now()"
+                            + "  });"
+                            + "}"
+                            + "})();"
+            );
+            for (String browserUrl : browserUrls) {
+                String webOrigin = extractOrigin(browserUrl);
+                if (webOrigin != null && !webOrigin.isBlank()) {
+                    context.grantPermissions(
+                            List.of("geolocation"),
+                            new BrowserContext.GrantPermissionsOptions().setOrigin(webOrigin)
+                    );
+                }
+            }
+
+            Page page = context.newPage();
+            page.onRequest(request -> captureGuestAccessFromRequest(request, config, capturedAccess));
+            page.onResponse(response -> captureGuestAccessFromResponse(response, config, capturedAccess));
+
+            long deadline = System.currentTimeMillis() + timeoutMs;
+            for (String browserUrl : browserUrls) {
+                if (capturedAccess.get() != null || System.currentTimeMillis() >= deadline) {
+                    break;
+                }
+                long remainingMs = Math.max(5_000L, deadline - System.currentTimeMillis());
+                LOG.info("Guest browser recovery: opening {} (headed={}, captureHosts={})",
+                        browserUrl, headed, describeGuestCaptureHosts(config));
+                try {
+                    page.navigate(browserUrl, new Page.NavigateOptions().setTimeout(remainingMs));
+                } catch (Exception e) {
+                    LOG.warn("Guest browser recovery could not open {}: {}", browserUrl, e.getMessage());
+                    continue;
+                }
+                page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+                waitForPageContent(page, Math.min(remainingMs, 30_000L));
+                page.waitForTimeout(2_000);
+                try {
+                    page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(30_000));
+                } catch (Exception e) {
+                    LOG.debug("Guest landing network idle wait skipped: {}", e.getMessage());
+                }
+                dismissAllLandingPopups(page);
+
+                while (capturedAccess.get() == null && System.currentTimeMillis() < deadline) {
+                    dismissAllLandingPopups(page);
+                    if (clickGuestEntryPointIfPresent(page)) {
+                        LOG.info("Clicked guest entry on {}", page.url());
+                    } else {
+                        clickLoginEntryPointIfPresent(page);
+                        dismissAllLandingPopups(page);
+                        clickGuestEntryPointIfPresent(page);
+                    }
+                    page.waitForTimeout(2_000);
+                    try {
+                        page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(10_000));
+                    } catch (Exception e) {
+                        LOG.debug("Guest flow network idle wait skipped: {}", e.getMessage());
+                    }
+                }
+                if (capturedAccess.get() != null) {
+                    break;
+                }
+            }
+
+            if (capturedAccess.get() == null) {
+                saveDebugScreenshot(page, "vrgo-guest-browser-recovery-failed.png");
+            }
+
+            String lastUrl = page.url();
+            String lastTitle = page.title();
+            browser.close();
+
+            String token = capturedAccess.get();
+            if (token != null) {
+                LOG.info("Guest browser recovery captured guest access token");
+            } else {
+                LOG.error(
+                        "Guest browser recovery finished but no guest Bearer token was captured from API traffic. "
+                                + "Tried URLs: {}. Last URL: {}. Title: {}. "
+                                + "Set VRGO_BROWSER_HEADED=true to debug guest entry selectors.",
+                        String.join(", ", browserUrls),
+                        lastUrl,
+                        lastTitle
+                );
+            }
+            return token;
+        } catch (Throwable e) {
+            LOG.error("Guest browser recovery failed: {}", e.getMessage(), e);
+            return null;
+        }
+    }
+
+    /**
+     * Guest browse URLs to try. Test stack uses {@code /hubMovies}; Astro stacks often expose guest on
+     * {@code /hubMovies} even when subscriber login uses {@code /hubHome}.
+     */
+    private static String[] resolveGuestBrowserUrls(EnvironmentConfig config) {
+        Set<String> urls = new LinkedHashSet<>();
+        addGuestBrowserUrl(urls, config.getProperty("vrgo.guest.browser.url"));
+        addGuestBrowserUrl(urls, config.getProperty("vrgo.auth.browser.url"));
+        String authUrl = config.getProperty("vrgo.auth.browser.url");
+        if (authUrl != null && authUrl.contains("/hubHome")) {
+            addGuestBrowserUrl(urls, authUrl.replace("/hubHome", "/hubMovies"));
+        }
+        addGuestBrowserUrl(urls, config.getProperty("vrgo.header.origin"));
+        if (Environment.current() == Environment.TEST) {
+            addGuestBrowserUrl(urls, "https://web.vrgo.test.xp.irdeto.com/hubMovies");
+        }
+        return urls.toArray(String[]::new);
+    }
+
+    private static void addGuestBrowserUrl(Set<String> urls, String url) {
+        if (url == null || url.isBlank()) {
+            return;
+        }
+        urls.add(url.strip());
+    }
+
+    private static void waitForPageContent(Page page, long timeoutMs) {
+        try {
+            page.waitForFunction(
+                    "() => document.body && document.body.innerText.trim().length > 20",
+                    null,
+                    new Page.WaitForFunctionOptions().setTimeout(timeoutMs)
+            );
+        } catch (Exception e) {
+            LOG.debug("Guest page content wait skipped: {}", e.getMessage());
+        }
+    }
+
+    private static String resolveApiHost(EnvironmentConfig config) {
+        String base = config.getProperty("vrgo.base.url", "https://api.vrgo.test.xp.irdeto.com");
+        try {
+            return java.net.URI.create(base.strip()).getHost();
+        } catch (Exception e) {
+            return "api.vrgo.test.xp.irdeto.com";
+        }
+    }
+
+    private static void captureGuestAccessFromRequest(
+            com.microsoft.playwright.Request request,
+            EnvironmentConfig config,
+            AtomicReference<String> capturedAccess
+    ) {
+        if (!matchesGuestCaptureUrl(request.url(), config)) {
+            return;
+        }
+        String auth = request.headerValue("authorization");
+        if (auth == null || auth.isBlank()) {
+            auth = request.headerValue("Authorization");
+        }
+        storeGuestAccessIfValid(auth, capturedAccess, request.url());
+    }
+
+    private static void captureGuestAccessFromResponse(
+            Response response,
+            EnvironmentConfig config,
+            AtomicReference<String> capturedAccess
+    ) {
+        if (!matchesGuestCaptureUrl(response.url(), config) || response.status() < 200 || response.status() >= 300) {
+            return;
+        }
+        try {
+            JsonNode json = MAPPER.readTree(response.text());
+            JsonNode access = json.get("access_token");
+            if (access != null && !access.asText().isBlank()) {
+                storeGuestAccessIfValid(access.asText(), capturedAccess, response.url());
+            }
+        } catch (Exception e) {
+            LOG.debug("Could not parse guest API response from {}: {}", response.url(), e.getMessage());
+        }
+    }
+
+    private static boolean matchesGuestCaptureUrl(String url, EnvironmentConfig config) {
+        if (url == null || url.isBlank()) {
+            return false;
+        }
+        for (String host : resolveGuestCaptureHosts(config)) {
+            if (url.contains(host)) {
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static String[] resolveGuestCaptureHosts(EnvironmentConfig config) {
+        String configured = config.getProperty("vrgo.guest.api.capture.hosts");
+        if (configured != null && !configured.isBlank()) {
+            return Arrays.stream(configured.split(","))
+                    .map(String::strip)
+                    .filter(s -> !s.isEmpty())
+                    .toArray(String[]::new);
+        }
+        String apiHost = resolveApiHost(config);
+        String tokenHost = extractHost(config.getProperty("vrgo.auth.token.url"));
+        String baseHost = extractHost(config.getProperty("vrgo.base.url"));
+        return Arrays.stream(new String[] {apiHost, tokenHost, baseHost})
+                .filter(h -> h != null && !h.isBlank())
+                .distinct()
+                .toArray(String[]::new);
+    }
+
+    private static String describeGuestCaptureHosts(EnvironmentConfig config) {
+        return String.join(", ", resolveGuestCaptureHosts(config));
+    }
+
+    private static String extractHost(String url) {
+        if (url == null || url.isBlank()) {
+            return null;
+        }
+        try {
+            return java.net.URI.create(url.strip()).getHost();
+        } catch (Exception e) {
+            return null;
+        }
+    }
+
+    private static void storeGuestAccessIfValid(String rawToken, AtomicReference<String> capturedAccess, String sourceUrl) {
+        if (rawToken == null || rawToken.isBlank()) {
+            return;
+        }
+        String token = rawToken.strip();
+        if (token.regionMatches(true, 0, "Bearer ", 0, 7)) {
+            token = token.substring(7).strip();
+        }
+        if (!VrgoJwtUtils.isGuestToken(token)) {
+            return;
+        }
+        capturedAccess.set(token);
+        LOG.info("Captured guest access token from {}", sourceUrl);
+    }
+
+    private static boolean clickGuestEntryPointIfPresent(Page page) {
+        String[] guestLabels = {
+                "Continue As Guest",
+                "Browse as Guest",
+                "Continue as Guest",
+                "Browse As Guest",
+                "Browse as guest",
+                "Guest",
+                "Continue without signing in",
+                "Continue without login",
+                "Skip login",
+                "Teruskan sebagai Tetamu",
+                "Layari sebagai Tetamu"
+        };
+        for (String label : guestLabels) {
+            Locator button = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.BUTTON,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (button.count() > 0 && button.first().isVisible()) {
+                LOG.info("Clicking guest entry: '{}'", label);
+                button.first().click(new Locator.ClickOptions().setTimeout(15_000));
+                page.waitForTimeout(1_500);
+                return true;
+            }
+            Locator link = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.LINK,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (link.count() > 0 && link.first().isVisible()) {
+                LOG.info("Clicking guest link: '{}'", label);
+                link.first().click();
+                page.waitForTimeout(1_500);
+                return true;
+            }
+        }
+        Locator guestText = page.locator("button:has-text('Guest'), a:has-text('Guest')");
+        if (guestText.count() > 0 && guestText.first().isVisible()) {
+            LOG.info("Clicking guest element via text selector");
+            guestText.first().click(new Locator.ClickOptions().setTimeout(15_000));
+            page.waitForTimeout(1_500);
+            return true;
+        }
+        return false;
     }
 
     private static void runLoginFlow(
@@ -566,17 +881,72 @@ public final class VrgoBrowserAuthRecovery {
 
     private static Credentials credentials() {
         String username = firstNonBlank(
-                System.getenv("VRGO_TEST_USERNAME"),
+                VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_AUTH_USERNAME"),
+                VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_TEST_USERNAME"),
                 System.getProperty("vrgo.auth.username")
         );
         String password = firstNonBlank(
-                System.getenv("VRGO_TEST_PASSWORD"),
+                VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_AUTH_PASSWORD"),
+                VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_TEST_PASSWORD"),
                 System.getProperty("vrgo.auth.password")
         );
         if (username == null || password == null) {
             return null;
         }
         return new Credentials(username, password);
+    }
+
+    private static BrowserContext newBrowserContext(Browser browser, EnvironmentConfig config, boolean includeViewport) {
+        Browser.NewContextOptions options = new Browser.NewContextOptions()
+                .setUserAgent(config.getProperty(
+                        "vrgo.header.user-agent",
+                        "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+                                + "(KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36"
+                ))
+                .setGeolocation(new Geolocation(3.1390, 101.6869))
+                .setPermissions(List.of("geolocation"));
+        if (includeViewport) {
+            options.setViewportSize(1280, 720);
+        }
+        WebBasicAuthCredentials basicAuth = resolveWebBasicAuthCredentials();
+        if (basicAuth != null) {
+            options.setHttpCredentials(new HttpCredentials(basicAuth.username(), basicAuth.password()));
+            LOG.info("HTTP basic auth configured for VRGO web portal (user={})", basicAuth.username());
+        }
+        return browser.newContext(options);
+    }
+
+    private static WebBasicAuthCredentials resolveWebBasicAuthCredentials() {
+        String username = firstNonBlank(
+                System.getProperty("vrgo.web.basic.auth.username"),
+                VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_WEB_BASIC_AUTH_USERNAME"),
+                System.getenv("VRGO_WEB_BASIC_AUTH_USERNAME")
+        );
+        String password = firstNonBlank(
+                System.getProperty("vrgo.web.basic.auth.password"),
+                VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_WEB_BASIC_AUTH_PASSWORD"),
+                System.getenv("VRGO_WEB_BASIC_AUTH_PASSWORD")
+        );
+        if (username == null || password == null) {
+            return null;
+        }
+        return new WebBasicAuthCredentials(username, password);
+    }
+
+    private record WebBasicAuthCredentials(String username, String password) {
+    }
+
+    private static String extractOrigin(String url) {
+        if (url == null || url.isBlank()) {
+            return "https://web.vrgo.test.xp.irdeto.com";
+        }
+        String trimmed = url.strip();
+        int schemeEnd = trimmed.indexOf("://");
+        if (schemeEnd < 0) {
+            return trimmed;
+        }
+        int pathStart = trimmed.indexOf('/', schemeEnd + 3);
+        return pathStart < 0 ? trimmed : trimmed.substring(0, pathStart);
     }
 
     private static long parseLong(String value, long defaultValue) {

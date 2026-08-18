@@ -23,7 +23,7 @@ public class TokenGeneratorApiClient extends BaseApiClient {
 
     /**
      * Headers sent by the browser for token-generator; excludes catalogueids, contenttype,
-     * isentitlementenabled, ottbouquetid, session_id, entitlements, entitlementvalues.
+     * isentitlementenabled, ottbouquetid, entitlements, entitlementvalues.
      */
     private static final List<String> ALLOWED_HEADERS = List.of(
             "accept",
@@ -47,6 +47,7 @@ public class TokenGeneratorApiClient extends BaseApiClient {
             "sec-fetch-dest",
             "sec-fetch-mode",
             "sec-fetch-site",
+            "session_id",
             "tenant_identifier",
             "user-agent"
     );
@@ -126,15 +127,38 @@ public class TokenGeneratorApiClient extends BaseApiClient {
             }
         }
 
-        String entitlementHash = firstNonBlank(
-                TokenGeneratorSessionSupport.entitlementHashFromBearer(),
-                environmentConfig.getProperty("vrgo.token.generator.entitlementhash"),
-                environmentConfig.getProperty("vrgo.header.entitlementhash")
-        );
+        String entitlementHash = resolveEntitlementHash();
         if (entitlementHash != null && !entitlementHash.isBlank()) {
             r = r.header("entitlementhash", entitlementHash.strip());
         }
         return r;
+    }
+
+    /**
+     * {@code entitlementhash} must match {@code sessionInfo.entitlements} in the request body.
+     * The bearer JWT claim is authoritative for refresh-token runs; a static override is available
+     * for replaying a captured browser curl via {@code vrgo.token.generator.entitlementhash}.
+     */
+    private String resolveEntitlementHash() {
+        boolean preferConfig = Boolean.parseBoolean(firstNonBlank(
+                System.getProperty("vrgo.token.generator.entitlementhash.prefer.config"),
+                environmentConfig.getProperty("vrgo.token.generator.entitlementhash.prefer.config"),
+                "false"
+        ));
+        if (preferConfig) {
+            return firstNonBlank(
+                    System.getProperty("vrgo.token.generator.entitlementhash"),
+                    environmentConfig.getProperty("vrgo.token.generator.entitlementhash"),
+                    environmentConfig.getProperty("vrgo.header.entitlementhash"),
+                    TokenGeneratorSessionSupport.entitlementHashFromBearer()
+            );
+        }
+        return firstNonBlank(
+                TokenGeneratorSessionSupport.entitlementHashFromBearer(),
+                System.getProperty("vrgo.token.generator.entitlementhash"),
+                environmentConfig.getProperty("vrgo.token.generator.entitlementhash"),
+                environmentConfig.getProperty("vrgo.header.entitlementhash")
+        );
     }
 
     private static String firstNonBlank(String... values) {

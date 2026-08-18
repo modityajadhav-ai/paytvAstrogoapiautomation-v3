@@ -1,6 +1,7 @@
 package com.automation.api.client;
 
 import com.automation.api.auth.VrgoAuthSupport;
+import com.automation.api.auth.VrgoGuestTokenSupport;
 import com.automation.api.config.EnvironmentConfig;
 import io.restassured.response.Response;
 import io.restassured.specification.RequestSpecification;
@@ -238,11 +239,13 @@ public class VRSearchProxyApiClient extends BaseApiClient {
 
         String token;
         if (useGuestToken) {
-            token = firstNonBlank(
-                    System.getProperty("vrgo.search.proxy.guest.bearer.token"),
-                    System.getenv("VRGO_GUEST_BEARER_TOKEN"),
-                    VrgoAuthSupport.getBearerToken(environmentConfig)
-            );
+            token = VrgoGuestTokenSupport.getGuestBearerToken(environmentConfig);
+            if (token == null || token.isBlank()) {
+                throw new IllegalStateException(
+                        "Guest bearer token unavailable. Set vrgo.search.proxy.guest.bearer.token in secrets, "
+                                + "VRGO_GUEST_BEARER_TOKEN, or enable guest browser recovery."
+                );
+            }
         } else {
             token = VrgoAuthSupport.getBearerToken(environmentConfig);
         }

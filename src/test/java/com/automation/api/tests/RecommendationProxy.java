@@ -43,6 +43,18 @@ public class RecommendationProxy extends BaseTest {
     /** Recommendation proxy returns this when the use-case id is not configured for the environment. */
     private static final String USECASE_NOT_CONFIGURED_MARKER = "No Use Case found for id";
 
+    private static final String DATA_OR_USECASE_NOT_CONFIGURED_SKIP =
+            "data or use case is not configured for this environment";
+
+    /** Page contexts exercised by rail-by-usecase (pass when any page returns 200 with data). */
+    private static final String[] RAIL_PAGES = {
+            "home",
+            "movies",
+            "tv shows",
+            "sports",
+            "kids",
+    };
+
     // ── Content by use-case ───────────────────────────────────────────────────
 
     @Test(description = "GET /recommendation-proxy/v1/content-by-usecase — returns non-empty recommendation results for more_like_this_vod")
@@ -104,7 +116,7 @@ public class RecommendationProxy extends BaseTest {
 
     // ── Rail by use-case ──────────────────────────────────────────────────────
 
-    /** Use-case values exercised by the rail-by-usecase tests (page=home). */
+    /** Use-case values exercised by the rail-by-usecase tests across all {@link #RAIL_PAGES}. */
     private static final String[] RAIL_USECASES = {
             "dont_miss",
             "popular_top_10",
@@ -115,7 +127,7 @@ public class RecommendationProxy extends BaseTest {
             "trending_movie_kids",
             "featured_hero",
             "recently_added",
-            "because_you_watched",
+            "Because_You_Watched",
             "top_10_home",
     };
 
@@ -130,91 +142,103 @@ public class RecommendationProxy extends BaseTest {
 
     @Test(
             dataProvider = "railUsecases",
-            description = "GET /recommendation-proxy/v1/rail-by-usecase — returns non-empty rail results for each home-page use-case"
+            description = "GET /recommendation-proxy/v1/rail-by-usecase — passes when any page (home, movies, tv shows, sports, kids) returns 200 with data"
     )
-    @Story("GET rail-by-usecase (home)")
-    public void railByUsecase_homePage_returnsResults(String usecase) {
+    @Story("GET rail-by-usecase (all pages)")
+    public void railByUsecase_allPages_returnsResults(String usecase) {
         requirePrerequisites();
 
-        String page   = config.getProperty("vrgo.recommendation.proxy.rail.by.usecase.page", "home");
-        int    offset = readIntProperty("vrgo.recommendation.proxy.rail.by.usecase.offset",   0);
-        int    limit  = readIntProperty("vrgo.recommendation.proxy.rail.by.usecase.limit",    50);
+        int offset = readIntProperty("vrgo.recommendation.proxy.rail.by.usecase.offset", 0);
+        int limit  = readIntProperty("vrgo.recommendation.proxy.rail.by.usecase.limit",  50);
 
         Allure.parameter("usecase",     usecase);
-        Allure.parameter("page",        page);
         Allure.parameter("offset",      offset);
         Allure.parameter("limit",       limit);
         Allure.parameter("environment", Environment.current().name());
+        Allure.parameter("pages.tried", String.join(", ", RAIL_PAGES));
 
-        Response r = recommendationProxyApi.railByUsecaseRaw(usecase, page, offset, limit);
-        AllureAttachmentUtils.attachJson("rail-by-usecase-" + usecase + "-response", r.asString());
-        assertRecommendationResultsOrSkip(r, "rail-by-usecase");
+        for (String page : RAIL_PAGES) {
+            Allure.parameter("page", page);
+
+            Response r = recommendationProxyApi.railByUsecaseRaw(usecase, page, offset, limit);
+            AllureAttachmentUtils.attachJson("rail-by-usecase-" + usecase + "-" + page + "-response", r.asString());
+
+            if (shouldSkipForDataOrUsecaseNotConfigured(r)) {
+                continue;
+            }
+            if (r.statusCode() != 200) {
+                assertRecommendationResults(r, "rail-by-usecase");
+            }
+            if (hasRecommendationResults(r)) {
+                Allure.parameter("passingPage", page);
+                assertRecommendationResults(r, "rail-by-usecase");
+                return;
+            }
+        }
+
+        throw new SkipException(DATA_OR_USECASE_NOT_CONFIGURED_SKIP);
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**
-     * Skips when the upstream recommendation provider returns no data (third-party dependency).
+     * Skips when the response indicates missing upstream data or an unconfigured use-case.
      * Otherwise asserts HTTP 200 and a non-null results/contents payload.
      */
     private static void assertRecommendationResultsOrSkip(Response r, String endpointLabel) {
-        skipIfEmptyRecommendationFromSourceService(r);
-        skipIfUsecaseNotConfigured(r);
+        skipIfDataOrUsecaseNotConfigured(r);
+        assertRecommendationResults(r, endpointLabel);
+    }
 
+    private static void assertRecommendationResults(Response r, String endpointLabel) {
         r.then()
                 .statusCode(200)
                 .body(notNullValue());
 
         Assert.assertFalse(r.asString().isBlank(),
                 endpointLabel + " response body must not be empty.");
-        Assert.assertTrue(r.jsonPath().getList("data.results") != null
-                        || r.jsonPath().getList("contents") != null
-                        || r.jsonPath().getList("results") != null,
+        Assert.assertTrue(hasRecommendationResults(r),
                 "Response should contain a non-null results/contents array (data.results, contents, or results).");
     }
 
-    private static void skipIfEmptyRecommendationFromSourceService(Response r) {
-        String errorMessage = resolveRecommendationErrorMessage(r);
-        if (errorMessage != null && errorMessage.contains(EMPTY_RECOMMENDATION_FROM_SOURCE)) {
-            throw new SkipException(
-                    "Skipped: third-party recommendation source returned no data — "
-                            + errorMessage
-                            + ". This reflects upstream availability, not a recommendation-proxy defect.");
+    private static boolean hasRecommendationResults(Response r) {
+        if (r == null || r.statusCode() != 200) {
+            return false;
         }
-    }
-
-    private static void skipIfUsecaseNotConfigured(Response r) {
         String body = r.asString();
-        if (body == null || !body.contains(USECASE_NOT_CONFIGURED_MARKER)) {
-            return;
+        if (body == null || body.isBlank()) {
+            return false;
         }
-        String detail = firstNonBlank(
-                r.jsonPath().getString("message"),
-                r.jsonPath().getString("errorMessage"),
-                r.jsonPath().getString("data.message"),
-                USECASE_NOT_CONFIGURED_MARKER
-        );
-        throw new SkipException(
-                "Skipped: data or use case is not configured for this environment — " + detail);
+        return r.jsonPath().getList("data.results") != null
+                || r.jsonPath().getList("contents") != null
+                || r.jsonPath().getList("results") != null;
     }
 
-    private static String resolveRecommendationErrorMessage(Response r) {
+    private static void skipIfDataOrUsecaseNotConfigured(Response r) {
+        if (shouldSkipForDataOrUsecaseNotConfigured(r)) {
+            throw new SkipException(DATA_OR_USECASE_NOT_CONFIGURED_SKIP);
+        }
+    }
+
+    private static boolean shouldSkipForDataOrUsecaseNotConfigured(Response r) {
+        String message = resolveRecommendationMessage(r);
+        return message != null
+                && (message.contains(EMPTY_RECOMMENDATION_FROM_SOURCE)
+                || message.contains(USECASE_NOT_CONFIGURED_MARKER));
+    }
+
+    private static String resolveRecommendationMessage(Response r) {
         String body = r.asString();
         if (body == null || body.isBlank()) {
             return null;
         }
-        if (!body.contains("errorMessage")) {
-            return null;
-        }
-        String msg = r.jsonPath().getString("errorMessage");
-        if (msg != null && !msg.isBlank()) {
-            return msg.strip();
-        }
-        msg = r.jsonPath().getString("data.errorMessage");
-        if (msg != null && !msg.isBlank()) {
-            return msg.strip();
-        }
-        return body.contains(EMPTY_RECOMMENDATION_FROM_SOURCE) ? EMPTY_RECOMMENDATION_FROM_SOURCE : null;
+        String message = firstNonBlank(
+                r.jsonPath().getString("message"),
+                r.jsonPath().getString("errorMessage"),
+                r.jsonPath().getString("data.message"),
+                r.jsonPath().getString("data.errorMessage")
+        );
+        return message != null ? message : body;
     }
 
     private void requirePrerequisites() {

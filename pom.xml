@@ -243,6 +243,16 @@
                             <classpathScope>test</classpathScope>
                         </configuration>
                     </execution>
+                    <execution>
+                        <id>guest-recovery-verify</id>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>com.automation.api.auth.VrgoGuestBrowserRecoveryVerifier</mainClass>
+                            <classpathScope>test</classpathScope>
+                        </configuration>
+                    </execution>
                 </executions>
             </plugin>
         </plugins>

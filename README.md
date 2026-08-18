@@ -104,6 +104,29 @@ Content layout identifiers (Movie, TVShow, Series, Boxset) are configured as `vr
 
 **Production:** do not commit bearer tokens or `x-api-key`. `prod.properties` omits `vrgo.x.api.key`; supply `VRGO_X_API_KEY` (and bearer) via CI or local env.
 
+### VRGO auth (all environments)
+
+Each stack has its own secrets file, token cache, and browser login URL:
+
+| Environment | Secrets file | Token cache | Browser login (`vrgo.auth.browser.url`) |
+|-------------|--------------|-------------|----------------------------------------|
+| test | `secrets/vrgo-auth.test.local.properties` | `vrgo-token-cache-test.json` | `https://web.vrgo.test.xp.irdeto.com/hubMovies` |
+| dev | `secrets/vrgo-auth.dev.local.properties` | `vrgo-token-cache-dev.json` | `https://web.vrgo.dev.xp.irdeto.com/hubHome` |
+| load | `secrets/vrgo-auth.load.local.properties` | `vrgo-token-cache-load.json` | `https://web.vrgo.load.xp.irdeto.com/hubHome` |
+| stage | `secrets/vrgo-auth.stage.local.properties` | `vrgo-token-cache-stage.json` | `https://web.vr.ctrp-stag.stgbpkastro.com/hubHome` |
+| stage2 | `secrets/vrgo-auth.stage2.local.properties` | `vrgo-token-cache-stage2.json` | `https://web2.vr.ctrp-stag.stgbpkastro.com/hubHome` |
+| prod | `secrets/vrgo-auth.prod.local.properties` | `vrgo-token-cache-prod.json` | `https://vrptv.ctrp.astro.com.my/hubHome` |
+
+Copy the matching `secrets/vrgo-auth.<env>.local.properties.example` → remove `.example`, then set `vrgo.refresh.token`, `vrgo.auth.username`, and `vrgo.auth.password` for that stack. Legacy `secrets/vrgo-auth.local.properties` still works as a fallback.
+
+**CI variables** (masked): `VRGO_REFRESH_TOKEN_<ENV>` or generic `VRGO_REFRESH_TOKEN` per job; optional `VRGO_AUTH_USERNAME_<ENV>` / `VRGO_AUTH_PASSWORD_<ENV>` for browser recovery.
+
+```powershell
+# Run load profile
+.\mvnw.cmd clean test -Pload
+# Or: scripts\run-tests.bat load
+```
+
 ## Allure report
 
 Tests write raw results under `target/allure-results` (see `src/test/resources/allure.properties` and the Surefire `allure.results.directory` property).

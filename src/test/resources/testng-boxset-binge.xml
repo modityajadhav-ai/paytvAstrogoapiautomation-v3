@@ -1,29 +1,16 @@
 <?xml version="1.0" encoding="UTF-8"?>
-
 <!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
-
-<suite name="API Automation Suite" verbose="1">
-
+<!--
+  Boxset binge-watch — single continuous flow (one DELETE at step 1; state carries forward).
+  Run: scripts/run-boxset-binge-tests.bat  OR
+       mvn clean test -Ptest -Dsurefire.suiteXmlFiles=src/test/resources/testng-boxset-binge.xml
+-->
+<suite name="Boxset Binge Watch Suite" verbose="1" parallel="false">
     <listeners>
-
         <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
-
     </listeners>
-
-    <test name="API Regression - Run 1" preserve-order="true">
-
+    <test name="Boxset Binge Watch Scenarios" preserve-order="true">
         <classes>
-
-            <class name="com.automation.api.tests.ContentDetail"/>
-
-            <class name="com.automation.api.tests.ContinueWatch"/>
-
-            <class name="com.automation.api.tests.ContinueWatchScenarios"/>
-
-            <class name="com.automation.api.tests.WatchAgain"/>
-
-            <class name="com.automation.api.tests.WatchlistFavourite"/>
-
             <class name="com.automation.api.tests.BoxsetBingeWatchScenarios">
                 <methods>
                     <include name="step01_getContinueWatchAndDeleteAllItems"/>
@@ -44,30 +31,6 @@
                     <include name="step16_getContinueWatchBoxsetContent_boxset1_returns200"/>
                 </methods>
             </class>
-
-            <class name="com.automation.api.tests.LearnAction"/>
-
-            <class name="com.automation.api.tests.RecommendationProxy"/>
-
-            <class name="com.automation.api.tests.VRSearchProxy"/>
-
-            <class name="com.automation.api.tests.LockChannel"/>
-
-            <class name="com.automation.api.tests.LastTunedChannel"/>
-
-            <class name="com.automation.api.tests.SearchHistory"/>
-
-            <class name="com.automation.api.tests.HomescreenMenu"/>
-
-            <class name="com.automation.api.tests.HomescreenProxy"/>
-
-            <class name="com.automation.api.tests.ConfigService"/>
-
-            <class name="com.automation.api.tests.Footer"/>
-
         </classes>
-
     </test>
-
 </suite>
-

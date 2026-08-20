@@ -234,6 +234,21 @@
                 </configuration>
                 <executions>
                     <execution>
+                        <id>playwright-install</id>
+                        <goals>
+                            <goal>java</goal>
+                        </goals>
+                        <configuration>
+                            <mainClass>com.microsoft.playwright.CLI</mainClass>
+                            <classpathScope>compile</classpathScope>
+                            <arguments>
+                                <argument>install</argument>
+                                <argument>--with-deps</argument>
+                                <argument>chromium</argument>
+                            </arguments>
+                        </configuration>
+                    </execution>
+                    <execution>
                         <id>browser-recovery-verify</id>
                         <goals>
                             <goal>java</goal>

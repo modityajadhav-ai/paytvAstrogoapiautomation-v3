@@ -19,6 +19,9 @@ import java.nio.file.Paths;
  *   <li>{@code secrets/vrgo-auth.<env>.local.properties} or {@code VRGO_REFRESH_TOKEN_<ENV>} when updated (wins over stale cache)</li>
  *   <li>Legacy {@code secrets/vrgo-auth.local.properties} when no env-specific file exists</li>
  *   <li>Rotated token in {@code vrgo-token-cache-<env>.json} from a previous successful run</li>
+ *   <li>Headless browser login ({@code vrgo.auth.username}/{@code vrgo.auth.password} plus optional
+ *       {@code vrgo.web.basic.auth.*}) capturing {@code refresh_token} from {@code POST /v1/auth/token}
+ *       when no seed/cache token exists or the session was revoked</li>
  * </ol>
  * Access tokens refresh automatically ~90s before JWT expiry. Rotated refresh tokens are written back to the cache.
  */
@@ -114,7 +117,7 @@ public final class VrgoTokenHolder {
                 && !VrgoJwtUtils.isExpiringSoon(accessToken, refreshBufferSeconds)) {
             return true;
         }
-        return hasRefreshCredential();
+        return hasRefreshCredential() || VrgoBrowserAuthSupport.isConfigured();
     }
 
     private void loadCredentials() {
@@ -201,10 +204,14 @@ public final class VrgoTokenHolder {
             publishBearerToken(accessToken);
             return;
         }
-        if (!hasRefreshCredential()) {
-            throw new IllegalStateException(buildMissingCredentialMessage());
+        if (hasRefreshCredential()) {
+            refreshAccessToken();
+            return;
         }
-        refreshAccessToken();
+        if (tryBrowserRecovery()) {
+            return;
+        }
+        throw new IllegalStateException(buildMissingCredentialMessage());
     }
 
     private void refreshAccessToken() {
@@ -235,17 +242,29 @@ public final class VrgoTokenHolder {
     }
 
     private boolean tryBrowserRecovery() {
+        if (!VrgoBrowserAuthSupport.isConfigured()) {
+            return false;
+        }
+        LOG.info(
+                "VRGO browser login starting (vrgo.refresh.token missing or session invalid) — "
+                        + "capturing refresh_token from /v1/auth/token"
+        );
         String recovered = VrgoBrowserAuthSupport.recoverRefreshToken(config);
         if (recovered == null || recovered.isBlank()) {
             return false;
         }
         this.refreshToken = recovered.strip();
         System.setProperty("vrgo.refresh.token", refreshToken);
+        VrgoAuthSecretsWriter.persistRefreshToken(refreshToken);
         invalidateCache();
         if (tryRefreshWithToken(refreshToken)) {
             LOG.info("Recovered VRGO session via headless browser login");
             return true;
         }
+        LOG.warn(
+                "Browser login captured refresh_token but /v1/auth/token exchange failed. "
+                        + "The captured token was still written to secrets."
+        );
         return false;
     }
 
@@ -346,13 +365,19 @@ public final class VrgoTokenHolder {
         com.automation.api.config.Environment env = com.automation.api.config.Environment.current();
         String envName = env.name();
         Path secrets = VrgoAuthSecretsLoader.resolveLocalSecretsPath();
+        String recoveryHint = VrgoBrowserAuthSupport.isConfigured()
+                ? " Browser auto-login ran but did not capture refresh_token from /v1/auth/token. "
+                + "Run scripts\\verify-browser-recovery.bat or set VRGO_BROWSER_HEADED=true to debug."
+                : " Set vrgo.auth.username + vrgo.auth.password (and vrgo.web.basic.auth.* if the web portal "
+                + "requires HTTP basic auth), then run scripts\\install-playwright.bat.";
         if (java.nio.file.Files.isRegularFile(secrets)) {
-            return "No VRGO refresh token for " + envName + ". Edit " + secrets.toAbsolutePath()
+            return "No VRGO refresh token for " + envName + "." + recoveryHint
+                    + " Or edit " + secrets.toAbsolutePath()
                     + " and set vrgo.refresh.token=your_token (same line, no quotes). "
                     + "Or set VRGO_REFRESH_TOKEN_" + envName + " / VRGO_REFRESH_TOKEN env var.";
         }
-        return "No VRGO refresh token for " + envName + ". Configure ONE of: "
-                + "VRGO_REFRESH_TOKEN_" + envName + " or VRGO_REFRESH_TOKEN (CI), "
+        return "No VRGO refresh token for " + envName + "." + recoveryHint
+                + " Or configure ONE of: VRGO_REFRESH_TOKEN_" + envName + " or VRGO_REFRESH_TOKEN (CI), "
                 + VrgoAuthSecretsLoader.environmentSecretsPath() + " (local), "
                 + "legacy secrets/vrgo-auth.local.properties, "
                 + "or the env-specific vrgo-token-cache-<env>.json from a previous successful run.";

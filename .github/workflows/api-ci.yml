@@ -20,6 +20,14 @@ jobs:
           java-version: '17'
           cache: maven
 
+      - name: Install Playwright Chromium
+        run: |
+          chmod +x mvnw
+          ./mvnw -B -ntp dependency:resolve
+          ./mvnw -B -ntp exec:java \
+            -Dexec.mainClass=com.microsoft.playwright.CLI \
+            -Dexec.args="install --with-deps chromium"
+
       - name: Run tests
         env:
           VRGO_REFRESH_TOKEN: ${{ secrets.VRGO_REFRESH_TOKEN }}
@@ -27,6 +35,10 @@ jobs:
           VRGO_BEARER_TOKEN: ${{ secrets.VRGO_BEARER_TOKEN }}
           VRGO_X_API_KEY: ${{ secrets.VRGO_X_API_KEY }}
           VRGO_GUEST_BEARER_TOKEN: ${{ secrets.VRGO_GUEST_BEARER_TOKEN }}
+          VRGO_AUTH_USERNAME: ${{ secrets.VRGO_AUTH_USERNAME }}
+          VRGO_AUTH_PASSWORD: ${{ secrets.VRGO_AUTH_PASSWORD }}
+          VRGO_WEB_BASIC_AUTH_USERNAME: ${{ secrets.VRGO_WEB_BASIC_AUTH_USERNAME }}
+          VRGO_WEB_BASIC_AUTH_PASSWORD: ${{ secrets.VRGO_WEB_BASIC_AUTH_PASSWORD }}
         run: |
           chmod +x mvnw
           # Skip bundled HTML report (artifact is raw allure-results; saves CI time).
@@ -34,7 +46,7 @@ jobs:
 
       - name: Upload Allure results
         if: always()
-        uses: actions/upload-artifact@v5
+        uses: actions/upload-artifact@v6
         with:
           name: allure-results
           path: target/allure-results

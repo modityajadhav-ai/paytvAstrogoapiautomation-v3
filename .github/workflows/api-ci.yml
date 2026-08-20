@@ -11,16 +11,22 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Set up JDK 17
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '17'
           cache: maven
 
       - name: Run tests
+        env:
+          VRGO_REFRESH_TOKEN: ${{ secrets.VRGO_REFRESH_TOKEN }}
+          VRGO_REFRESH_TOKEN_TEST: ${{ secrets.VRGO_REFRESH_TOKEN_TEST }}
+          VRGO_BEARER_TOKEN: ${{ secrets.VRGO_BEARER_TOKEN }}
+          VRGO_X_API_KEY: ${{ secrets.VRGO_X_API_KEY }}
+          VRGO_GUEST_BEARER_TOKEN: ${{ secrets.VRGO_GUEST_BEARER_TOKEN }}
         run: |
           chmod +x mvnw
           # Skip bundled HTML report (artifact is raw allure-results; saves CI time).
@@ -28,7 +34,7 @@ jobs:
 
       - name: Upload Allure results
         if: always()
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v5
         with:
           name: allure-results
           path: target/allure-results

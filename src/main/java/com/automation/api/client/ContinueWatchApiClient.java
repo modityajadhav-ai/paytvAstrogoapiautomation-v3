@@ -174,6 +174,9 @@ public class ContinueWatchApiClient extends BaseApiClient {
 
     /**
      * POST subscriber continue-watch (e.g. add a movie/VOD item to CW).
+     * <p>
+     * Completion for continue-watch / watch-again is controlled by the {@code hasCompletedPlayBack}
+     * query flag ({@code true} when watch progress is &ge; 97% of total duration, otherwise {@code false}).
      *
      * @param hasCompletedPlayBack query flag forwarded to the API ({@code hasCompletedPlayBack})
      * @param body                 JSON body (contentId, contentType, watchDuration, subscriberId)
@@ -181,20 +184,6 @@ public class ContinueWatchApiClient extends BaseApiClient {
     public Response addSubscriberContinueWatchRaw(boolean hasCompletedPlayBack, SubscriberContinueWatchRequest body) {
         return vrgoGiven()
                 .queryParam("hasCompletedPlayBack", hasCompletedPlayBack)
-                .body(body)
-                .when()
-                .post(subscriberContinueWatchPath);
-    }
-
-    /**
-     * POST subscriber continue-watch without the {@code hasCompletedPlayBack} query parameter.
-     * Used for series-episode CW scenarios where completion is determined solely by the
-     * {@code watchDuration} to total-duration ratio (97% threshold).
-     *
-     * @param body JSON body (contentId, contentType, watchDuration, subscriberId)
-     */
-    public Response addSubscriberContinueWatchNoFlagRaw(SubscriberContinueWatchRequest body) {
-        return vrgoGiven()
                 .body(body)
                 .when()
                 .post(subscriberContinueWatchPath);

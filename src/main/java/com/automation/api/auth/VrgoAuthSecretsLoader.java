@@ -63,6 +63,8 @@ public final class VrgoAuthSecretsLoader {
         applyIfAbsent("vrgo.web.basic.auth.password", props.getProperty("vrgo.web.basic.auth.password"));
         applyIfAbsent("vrgo.auth.browser.recovery.enabled", props.getProperty("vrgo.auth.browser.recovery.enabled"));
         applyIfAbsent("vrgo.auth.browser.evict.device.on.limit", props.getProperty("vrgo.auth.browser.evict.device.on.limit"));
+        applyIfAbsent("vrgo.auth.browser.headed", props.getProperty("vrgo.auth.browser.headed"));
+        applyIfAbsent("vrgo.auth.browser.timeout.ms", props.getProperty("vrgo.auth.browser.timeout.ms"));
         applyIfAbsent("vrgo.token.generator.entitlements", props.getProperty("vrgo.token.generator.entitlements"));
 
         String refreshInFile = props.getProperty("vrgo.refresh.token");
@@ -70,6 +72,13 @@ public final class VrgoAuthSecretsLoader {
             LOG.warn(
                     "{} exists but vrgo.refresh.token is empty. Paste your refresh_token on line: vrgo.refresh.token=eyJ...",
                     path.toAbsolutePath()
+            );
+        } else if (VrgoJwtUtils.isGuestToken(refreshInFile)) {
+            LOG.error(
+                    "vrgo.refresh.token is a guest token (isGuest:true). Subscriber APIs such as Continue Watch POST "
+                            + "return ERR-700-401. Paste refresh_token from Astro ID login (POST /v1/auth/token after "
+                            + "username/password), not from Browse as Guest. Guest JWTs belong in "
+                            + "vrgo.search.proxy.guest.bearer.token only."
             );
         } else if (VrgoJwtUtils.hasProfileId(refreshInFile) && !VrgoJwtUtils.isRefreshTokenJwt(refreshInFile)) {
             LOG.warn(

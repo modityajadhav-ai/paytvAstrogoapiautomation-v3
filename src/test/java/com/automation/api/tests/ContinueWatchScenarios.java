@@ -25,16 +25,16 @@ import static org.hamcrest.Matchers.equalTo;
 import static org.hamcrest.Matchers.is;
 
 /**
- * Series-episode continue-watch scenario: adds EP1 <em>without</em> the {@code hasCompletedPlayBack}
- * query parameter and validates the 97%-completion threshold behaviour.
+ * Series-episode continue-watch scenario: uses {@code hasCompletedPlayBack} on every subscriber POST
+ * ({@code false} when watch progress &lt; 97% of total duration, {@code true} when &ge; 97%).
  *
  * <h3>Scenario flow</h3>
  * <ol>
- *   <li><strong>Partial EP1 POST</strong> – {@code watchDuration} &lt; 97 % of total duration.
- *       EP1 must appear in the GET CW list with non-zero progress.</li>
- *   <li><strong>Completed EP1 POST</strong> – {@code watchDuration} &ge; 97 % of total duration.
- *       EP1 must be absent from the GET CW list; configured EP2 (same series) must appear with
- *       progress&nbsp;=&nbsp;0.</li>
+ *   <li><strong>Partial EP1 POST</strong> – {@code hasCompletedPlayBack=false} with {@code watchDuration}
+ *       &lt; 97 % of total duration. EP1 must appear in the GET CW list with non-zero progress.</li>
+ *   <li><strong>Completed EP1 POST</strong> – {@code hasCompletedPlayBack=true} with {@code watchDuration}
+ *       &ge; 97 % of total duration. EP1 must be absent from the GET CW list; configured EP2 (same series)
+ *       must appear with progress&nbsp;=&nbsp;0.</li>
  *   <li><strong>Contents-progress POST</strong> – payload built from GET CW rows must NOT contain
  *       EP1 (EP1 must not be displayed with 0 progress after completion).</li>
  *   <li><strong>Recent-content GET for EP1</strong> – EP1 must not appear in the response with
@@ -119,7 +119,7 @@ public class ContinueWatchScenarios extends BaseTest {
 
     @Test(
             priority = 10,
-            description = "POST series EP1 without hasCompletedPlayBack — watchDuration < 97% of total; EP1 must appear in CW list"
+            description = "POST series EP1 with hasCompletedPlayBack=false — watchDuration < 97% of total; EP1 must appear in CW list"
     )
     @Story("POST /subscriber-activity-producer/v3/subscriber-continue-watch (series EP1 partial watch)")
     public void addEp1WithPartialDuration_ep1AppearsInCwList() {
@@ -130,19 +130,21 @@ public class ContinueWatchScenarios extends BaseTest {
         String ep1Type      = ep1ContentType();
         int    totalDur     = ep1TotalDuration();
         int    partialDur   = resolvePartialDuration(totalDur);
+        boolean hasCompletedPlayBack = hasCompletedPlayBackForDuration(partialDur, totalDur);
         String subscriberId = subscriberId();
 
         Allure.parameter("environment", Environment.current().name());
         Allure.parameter("cw.series.ep1.content.id", ep1Id);
         Allure.parameter("cw.series.ep1.total.duration.s", String.valueOf(totalDur));
         Allure.parameter("cw.series.ep1.partial.watch.duration.s", String.valueOf(partialDur));
+        Allure.parameter("cw.series.ep1.hasCompletedPlayBack", String.valueOf(hasCompletedPlayBack));
         Allure.parameter("cw.series.ep1.completion.threshold", "97%");
 
         SubscriberContinueWatchRequest body =
                 new SubscriberContinueWatchRequest(ep1Id, ep1Type, partialDur, subscriberId);
         AllureAttachmentUtils.attachJson("series-ep1-partial-cw-request", JsonUtils.toJson(body));
 
-        Response r = continueWatchApi.addSubscriberContinueWatchNoFlagRaw(body);
+        Response r = continueWatchApi.addSubscriberContinueWatchRaw(hasCompletedPlayBack, body);
         AllureAttachmentUtils.attachJson("series-ep1-partial-cw-response", r.asString());
         r.then().statusCode(200);
     }
@@ -197,7 +199,7 @@ public class ContinueWatchScenarios extends BaseTest {
         AllureAttachmentUtils.attachJson("cw-progress-v3-partial-response", r.asString());
         r.then().statusCode(200).body("status", equalTo(true));
 
-        Number ep1Progress = findProgressInCwV3Response(r, ep1Id);
+        Number ep1Progress = findEpisodeProgressInCwV3Response(r, ep1Id);
         Allure.parameter("cw.v3.progress.ep1.id", ep1Id);
         Allure.parameter("cw.v3.progress.ep1.value", ep1Progress == null ? "not found in response" : String.valueOf(ep1Progress));
 
@@ -212,7 +214,7 @@ public class ContinueWatchScenarios extends BaseTest {
 
     @Test(
             priority = 30,
-            description = "POST series EP1 without hasCompletedPlayBack — watchDuration >= 97% of total; triggers EP1 completion",
+            description = "POST series EP1 with hasCompletedPlayBack=true — watchDuration >= 97% of total; triggers EP1 completion",
             dependsOnMethods = {"getCwAfterPartialEp1_ep1PresentWithNonZeroProgress"}
     )
     @Story("POST /subscriber-activity-producer/v3/subscriber-continue-watch (series EP1 completed >= 97%)")
@@ -223,24 +225,26 @@ public class ContinueWatchScenarios extends BaseTest {
         String ep1Type      = ep1ContentType();
         int    totalDur     = ep1TotalDuration();
         int    completeDur  = resolveCompletedDuration(totalDur);
+        boolean hasCompletedPlayBack = hasCompletedPlayBackForDuration(completeDur, totalDur);
         String subscriberId = subscriberId();
 
         Allure.parameter("cw.series.ep1.content.id", ep1Id);
         Allure.parameter("cw.series.ep1.total.duration.s", String.valueOf(totalDur));
         Allure.parameter("cw.series.ep1.complete.watch.duration.s", String.valueOf(completeDur));
+        Allure.parameter("cw.series.ep1.hasCompletedPlayBack", String.valueOf(hasCompletedPlayBack));
         Allure.parameter("cw.series.ep1.completion.threshold", "97%");
 
         SubscriberContinueWatchRequest body =
                 new SubscriberContinueWatchRequest(ep1Id, ep1Type, completeDur, subscriberId);
         AllureAttachmentUtils.attachJson("series-ep1-completed-cw-request", JsonUtils.toJson(body));
 
-        Response r = continueWatchApi.addSubscriberContinueWatchNoFlagRaw(body);
+        Response r = continueWatchApi.addSubscriberContinueWatchRaw(hasCompletedPlayBack, body);
         AllureAttachmentUtils.attachJson("series-ep1-completed-cw-response", r.asString());
         r.then().statusCode(200);
     }
 
     /**
-     * After EP1 is POSTed with {@code watchDuration >= 97%} of total:
+     * After EP1 is POSTed with {@code hasCompletedPlayBack=true} ({@code watchDuration >= 97%} of total):
      * <ul>
      *   <li>EP1 must <em>not</em> be present in the CW list.</li>
      *   <li>Configured EP2 (next episode of the same series) must be present with {@code progress = 0}.</li>
@@ -270,7 +274,7 @@ public class ContinueWatchScenarios extends BaseTest {
 
         Assert.assertFalse(
                 ContinueWatch.cwListContainsConfiguredId(allIds, ep1Id),
-                "EP1 must NOT be in CW list after watchDuration >= 97% POST; ep1Id=" + ep1Id + " foundIds=" + allIds
+                "EP1 must NOT be in CW list after hasCompletedPlayBack=true POST; ep1Id=" + ep1Id + " foundIds=" + allIds
         );
         Assert.assertTrue(
                 ContinueWatch.cwListContainsConfiguredId(allIds, ep2Id),
@@ -287,24 +291,22 @@ public class ContinueWatchScenarios extends BaseTest {
     /**
      * Calls {@code POST cw/v3/progress} after EP1 completion and verifies:
      * <ul>
-     *   <li>EP1's recorded progress is &ge; 97 % of total duration (completion level).</li>
-     *   <li>Configured EP2 (same series) has progress&nbsp;=&nbsp;0 when present in the response.</li>
+     *   <li>EP1 episode row is absent (removed from CW after {@code hasCompletedPlayBack=true};
+     *       {@code SEASON} rows sharing the same id are ignored).</li>
+     *   <li>Configured EP2 (same series) has progress&nbsp;=&nbsp;0.</li>
      * </ul>
      */
     @Test(
             priority = 45,
-            description = "POST cw/v3/progress after EP1 completion — EP1 at completed progress; next episode at 0",
+            description = "POST cw/v3/progress after EP1 completion — EP1 absent; next episode at 0",
             dependsOnMethods = {"getCwAfterCompletedEp1_ep1AbsentEp2PresentWithZeroProgress"}
     )
-    @Story("POST /subscriber-event-service/cw/v3/progress (EP1 completed, next episode at 0%)")
+    @Story("POST /subscriber-event-service/cw/v3/progress (EP1 absent after completion, next episode at 0%)")
     public void postCwProgressV3_ep1CompletedAndNextEpisodeAtZeroProgress() {
         requireSeriesEpPrerequisites();
 
-        String ep1Id    = ep1ContentId();
-        String ep2Id    = ep2ContentId();
-        int    totalDur = ep1TotalDuration();
-        int    completedWatchDuration = resolveCompletedDuration(totalDur);
-        double completedThresholdPct = roundTo2Decimals(COMPLETION_THRESHOLD * 100);
+        String ep1Id = ep1ContentId();
+        String ep2Id = ep2ContentId();
 
         Map<String, Object> body = Map.of("filters", List.of());
         AllureAttachmentUtils.attachJson("cw-progress-v3-completed-request", JsonUtils.toJson(body));
@@ -313,37 +315,29 @@ public class ContinueWatchScenarios extends BaseTest {
         AllureAttachmentUtils.attachJson("cw-progress-v3-completed-response", r.asString());
         r.then().statusCode(200).body("status", equalTo(true));
 
-        // --- EP1 completed progress ---
-        Number ep1Progress = findProgressInCwV3Response(r, ep1Id);
-        double ep1ProgressPct = ep1Progress == null ? Double.NaN : roundTo2Decimals(ep1Progress.doubleValue());
+        Number ep1Progress = findEpisodeProgressInCwV3Response(r, ep1Id);
         Allure.parameter("cw.v3.progress.ep1.id", ep1Id);
         Allure.parameter("cw.v3.progress.ep1.value",
-                ep1Progress == null ? "not found in response" : String.valueOf(ep1ProgressPct));
-        Allure.parameter("cw.v3.progress.ep1.completed.threshold.pct", String.valueOf(completedThresholdPct));
-        Allure.parameter("cw.v3.progress.ep1.completed.watch.duration.s", String.valueOf(completedWatchDuration));
+                ep1Progress == null ? "not found in response" : String.valueOf(ep1Progress));
+        Assert.assertNull(
+                ep1Progress,
+                "cw/v3/progress must NOT include EP1 episode (contentType tv_show/VOD) after hasCompletedPlayBack=true; ep1Id="
+                        + ep1Id
+        );
 
-        if (ep1Progress != null) {
-            Assert.assertTrue(
-                    ep1ProgressPct >= completedThresholdPct,
-                    "cw/v3/progress must report EP1 progress >= " + completedThresholdPct
-                    + "% (97% of total " + totalDur + "s, watchDuration >= " + completedWatchDuration + "s) after completion; "
-                    + "ep1Id=" + ep1Id + " actual=" + ep1ProgressPct + "%"
-            );
-        }
-
-        // --- EP2 (same series) at 0 ---
-        Number ep2Progress = findProgressInCwV3Response(r, ep2Id);
+        Number ep2Progress = findEpisodeProgressInCwV3Response(r, ep2Id);
         Allure.parameter("cw.v3.progress.ep2.id", ep2Id);
         Allure.parameter("cw.v3.progress.ep2.value",
                 ep2Progress == null ? "not found in response" : String.valueOf(ep2Progress));
-
-        if (ep2Progress != null) {
-            Assert.assertEquals(
-                    ep2Progress.intValue(), 0,
-                    "cw/v3/progress must report configured EP2 watchDuration/progress = 0; "
-                    + "ep2Id=" + ep2Id + " actual=" + ep2Progress
-            );
-        }
+        Assert.assertNotNull(
+                ep2Progress,
+                "cw/v3/progress must include configured EP2 after EP1 completion; ep2Id=" + ep2Id
+        );
+        Assert.assertEquals(
+                ep2Progress.intValue(), 0,
+                "cw/v3/progress must report configured EP2 watchDuration/progress = 0; "
+                + "ep2Id=" + ep2Id + " actual=" + ep2Progress
+        );
     }
 
     /**
@@ -1223,6 +1217,14 @@ public class ContinueWatchScenarios extends BaseTest {
     // =================== cw/v3/progress response parser ===================
 
     /**
+     * Same as {@link #findProgressInCwV3Response(Response, String)} but ignores non-episode rows
+     * (e.g. {@code SEASON}) that may reuse the same {@code contentId} in the progress payload.
+     */
+    private static Number findEpisodeProgressInCwV3Response(Response r, String contentId) {
+        return findProgressInCwV3Response(r, contentId, true);
+    }
+
+    /**
      * Searches the {@code cw/v3/progress} response body for a progress entry matching
      * {@code contentId} and returns its {@code watchDuration} or {@code progress} value.
      *
@@ -1235,12 +1237,20 @@ public class ContinueWatchScenarios extends BaseTest {
      *       either a number (direct progress) or a nested map containing a value field.</li>
      * </ul>
      *
+     * @param episodeOnly when {@code true}, only rows whose {@code contentType} is an episode
+     *                    ({@code tv_show} or {@code VOD}) are considered; {@code SEASON} and
+     *                    other editorial types sharing the same id are skipped
      * @return the numeric progress/watchDuration for the matching entry, or {@code null} when
      *         the content id is not present in the response (never interacted with — acceptable
      *         for the next episode before it is played).
      */
     @SuppressWarnings("unchecked")
     private static Number findProgressInCwV3Response(Response r, String contentId) {
+        return findProgressInCwV3Response(r, contentId, false);
+    }
+
+    @SuppressWarnings("unchecked")
+    private static Number findProgressInCwV3Response(Response r, String contentId, boolean episodeOnly) {
         Object data = r.jsonPath().get("data");
         if (data == null) {
             return null;
@@ -1255,6 +1265,9 @@ public class ContinueWatchScenarios extends BaseTest {
                     Object id = entry.get(idKey);
                     if (id != null && ContinueWatch.cwListContainsConfiguredId(
                             Set.of(String.valueOf(id).strip()), contentId)) {
+                        if (episodeOnly && !isEpisodeCwV3ContentType(extractContentType(entry))) {
+                            continue;
+                        }
                         return extractNumericField(entry,
                                 "watchDuration", "watch_duration", "progress", "position");
                     }
@@ -1268,15 +1281,40 @@ public class ContinueWatchScenarios extends BaseTest {
                 }
                 Object val = e.getValue();
                 if (val instanceof Number n) {
-                    return n;
+                    if (!episodeOnly) {
+                        return n;
+                    }
+                    continue;
                 }
                 if (val instanceof Map<?, ?> vm) {
-                    return extractNumericField((Map<String, Object>) vm,
+                    Map<String, Object> entry = (Map<String, Object>) vm;
+                    if (episodeOnly && !isEpisodeCwV3ContentType(extractContentType(entry))) {
+                        continue;
+                    }
+                    return extractNumericField(entry,
                             "watchDuration", "watch_duration", "progress", "position");
                 }
             }
         }
         return null;
+    }
+
+    private static String extractContentType(Map<String, Object> entry) {
+        for (Map<String, Object> layer : rowLayers(entry)) {
+            Object v = layer.get("contentType");
+            if (v != null && !String.valueOf(v).isBlank()) {
+                return String.valueOf(v).strip();
+            }
+        }
+        return null;
+    }
+
+    private static boolean isEpisodeCwV3ContentType(String contentType) {
+        if (contentType == null || contentType.isBlank()) {
+            return false;
+        }
+        String t = contentType.strip();
+        return t.equalsIgnoreCase("tv_show") || t.equalsIgnoreCase("VOD");
     }
 
     // =================== Progress payload builder ===================
@@ -1550,6 +1588,17 @@ public class ContinueWatchScenarios extends BaseTest {
             return Integer.parseInt(v.strip());
         }
         return (int) Math.ceil(totalDuration * COMPLETION_THRESHOLD);
+    }
+
+    /**
+     * Maps watch progress to the subscriber-continue-watch {@code hasCompletedPlayBack} query flag.
+     * {@code true} when {@code watchDuration / totalDuration >= 97%}, otherwise {@code false}.
+     */
+    private static boolean hasCompletedPlayBackForDuration(int watchDurationSeconds, int totalDurationSeconds) {
+        if (totalDurationSeconds <= 0) {
+            return false;
+        }
+        return (double) watchDurationSeconds / totalDurationSeconds >= COMPLETION_THRESHOLD;
     }
 
     private String ep2ContentId() {

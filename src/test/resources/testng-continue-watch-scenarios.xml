@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<!--
+  ContinueWatchScenarios only (series EP, boxset movies, open-series).
+  Run: scripts/run-continue-watch-scenarios.bat [env]  OR
+       mvn test -Pprod -Dsurefire.suiteXmlFiles=src/test/resources/testng-continue-watch-scenarios.xml
+-->
+<suite name="Continue Watch Scenarios Suite" verbose="1" parallel="false">
+    <listeners>
+        <listener class-name="com.automation.api.listeners.SuiteBootstrapListener"/>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+    </listeners>
+    <test name="ContinueWatchScenarios" preserve-order="true">
+        <classes>
+            <class name="com.automation.api.tests.ContinueWatchScenarios"/>
+        </classes>
+    </test>
+</suite>

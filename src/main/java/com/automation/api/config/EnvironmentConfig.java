@@ -17,6 +17,8 @@ public final class EnvironmentConfig {
     private final int connectionTimeoutMs;
     private final int readTimeoutMs;
     private final Properties properties;
+    /** Snapshot of values loaded from the environment file; used to preserve test header overrides. */
+    private final Map<String, String> bootstrapByKey;
 
     private EnvironmentConfig(String baseUrl, int connectionTimeoutMs, int readTimeoutMs, Properties properties) {
         this.baseUrl = Objects.requireNonNull(baseUrl, "base.url");
@@ -24,6 +26,7 @@ public final class EnvironmentConfig {
         this.readTimeoutMs = readTimeoutMs;
         this.properties = new Properties();
         this.properties.putAll(properties);
+        this.bootstrapByKey = snapshotProperties(properties);
     }
 
     public static EnvironmentConfig load() {
@@ -61,6 +64,39 @@ public final class EnvironmentConfig {
      */
     public void setProperty(String key, String value) {
         properties.setProperty(key, value);
+    }
+
+    /**
+     * Whether {@code key} was set (non-blank) in the environment file at load time.
+     */
+    public boolean isBootstrapConfigured(String key) {
+        String value = bootstrapByKey.get(key);
+        return value != null && !value.isBlank();
+    }
+
+    /**
+     * Re-applies values from the environment file snapshot for the given keys.
+     * Used after JWT header sync so explicit file overrides (e.g. {@code isentitlementenabled=true})
+     * are not replaced by token or browser session values.
+     */
+    public void restoreBootstrapProperties(Iterable<String> keys) {
+        for (String key : keys) {
+            if (!isBootstrapConfigured(key)) {
+                continue;
+            }
+            properties.setProperty(key, bootstrapByKey.get(key).strip());
+        }
+    }
+
+    private static Map<String, String> snapshotProperties(Properties props) {
+        Map<String, String> snapshot = new LinkedHashMap<>();
+        for (String name : props.stringPropertyNames()) {
+            String value = props.getProperty(name);
+            if (value != null) {
+                snapshot.put(name, value);
+            }
+        }
+        return Map.copyOf(snapshot);
     }
 
     public String getProperty(String key, String defaultValue) {

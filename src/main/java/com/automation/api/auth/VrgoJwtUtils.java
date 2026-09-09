@@ -56,6 +56,29 @@ public final class VrgoJwtUtils {
         return payload.substring(start, end);
     }
 
+    public static Boolean extractClaimBoolean(String jwt, String claimName) {
+        String payload = decodePayloadJson(jwt);
+        if (payload == null || claimName == null || claimName.isBlank()) {
+            return null;
+        }
+        String key = "\"" + claimName + "\":";
+        int start = payload.indexOf(key);
+        if (start < 0) {
+            return null;
+        }
+        start += key.length();
+        while (start < payload.length() && Character.isWhitespace(payload.charAt(start))) {
+            start++;
+        }
+        if (payload.startsWith("true", start)) {
+            return true;
+        }
+        if (payload.startsWith("false", start)) {
+            return false;
+        }
+        return null;
+    }
+
     public static String normalizeRefreshTokenForGrant(String refreshToken) {
         if (refreshToken == null || refreshToken.isBlank()) {
             return refreshToken;

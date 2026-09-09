@@ -23,6 +23,7 @@ import java.util.Arrays;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Set;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
@@ -65,7 +66,7 @@ public final class VrgoBrowserAuthRecovery {
         String browserUrl = firstNonBlank(
                 config.getProperty("vrgo.auth.browser.url"),
                 config.getProperty("vrgo.header.origin"),
-                "https://web.vrgo.test.xp.irdeto.com/hubMovies"
+                "https://web.vrgo.test.xp.irdeto.com/hubHome"
         );
         String webOrigin = extractOrigin(browserUrl);
         String authTokenPath = "/v1/auth/token";
@@ -81,6 +82,7 @@ public final class VrgoBrowserAuthRecovery {
 
         AtomicReference<String> capturedRefresh = new AtomicReference<>();
         AtomicInteger evictionAttempts = new AtomicInteger();
+        AtomicBoolean allowAuthTokenResponses = new AtomicBoolean(false);
 
         try (Playwright playwright = Playwright.create()) {
             Browser browser = playwright.chromium().launch(
@@ -107,19 +109,39 @@ public final class VrgoBrowserAuthRecovery {
                     new BrowserContext.GrantPermissionsOptions().setOrigin(webOrigin)
             );
             Page page = context.newPage();
-            page.onResponse(response -> captureRefreshFromResponse(response, authTokenPath, capturedRefresh));
+            page.route("**/v1/auth/token", route -> {
+                if (allowAuthTokenResponses.get()) {
+                    route.resume();
+                } else {
+                    route.abort();
+                }
+            });
+            page.onResponse(response -> captureRefreshFromResponse(
+                    response, authTokenPath, capturedRefresh, allowAuthTokenResponses
+            ));
 
             LOG.info("Browser auth recovery: opening {} (headed={})", browserUrl, headed);
+            context.clearCookies();
             page.navigate(browserUrl, new Page.NavigateOptions().setTimeout(timeoutMs));
             page.waitForLoadState(LoadState.DOMCONTENTLOADED);
-            page.waitForTimeout(2_000);
             dismissAllLandingPopups(page);
+            beginSubscriberLoginFlow(page, allowAuthTokenResponses);
 
-            runLoginFlow(page, credentials, evictOnLimit, capturedRefresh, evictionAttempts, timeoutMs);
+            runLoginFlow(
+                    page,
+                    context,
+                    browserUrl,
+                    credentials,
+                    evictOnLimit,
+                    capturedRefresh,
+                    evictionAttempts,
+                    allowAuthTokenResponses,
+                    timeoutMs
+            );
 
             if (capturedRefresh.get() == null) {
                 LOG.warn("No token yet — waiting up to {}s for /v1/auth/token response", timeoutMs / 1000);
-                waitForAuthTokenResponse(page, authTokenPath, timeoutMs, capturedRefresh);
+                waitForAuthTokenResponse(page, authTokenPath, timeoutMs, capturedRefresh, allowAuthTokenResponses);
             }
 
             String lastUrl = page.url();
@@ -132,7 +154,11 @@ public final class VrgoBrowserAuthRecovery {
 
             String token = capturedRefresh.get();
             if (token != null) {
-                LOG.info("Browser auth recovery captured refresh_token");
+                LOG.info(
+                        "Browser auth recovery captured refresh_token from /v1/auth/token — "
+                                + "persisting to secrets and token cache"
+                );
+                VrgoAuthSecretsWriter.persistRefreshToken(token);
             } else {
                 LOG.error(
                         "Browser auth recovery finished but no refresh_token was captured. "
@@ -466,49 +492,308 @@ public final class VrgoBrowserAuthRecovery {
 
     private static void runLoginFlow(
             Page page,
+            BrowserContext context,
+            String browserUrl,
             Credentials credentials,
             boolean evictOnLimit,
             AtomicReference<String> capturedRefresh,
             AtomicInteger evictionAttempts,
+            AtomicBoolean allowAuthTokenResponses,
             long timeoutMs
     ) {
         long deadline = System.currentTimeMillis() + timeoutMs;
+        int sessionResetAttempts = 0;
 
         while (capturedRefresh.get() == null && System.currentTimeMillis() < deadline) {
-            if (isDeviceLimitPage(page)) {
-                if (evictionAttempts.get() >= MAX_DEVICE_EVICTIONS) {
-                    LOG.warn("Already evicted one device — waiting for OAuth redirect to complete");
-                    page.waitForTimeout(5_000);
-                } else if (!evictOneDeviceOnLimitPage(page, evictOnLimit, evictionAttempts)) {
+            if (page.isClosed()) {
+                LOG.error(
+                        "Browser window was closed before subscriber refresh_token was captured. "
+                                + "Keep the Playwright browser open until Astro ID login completes."
+                );
+                break;
+            }
+
+            try {
+                if (isDeviceLimitPage(page)) {
+                    allowAuthTokenResponses.set(true);
+                    if (evictionAttempts.get() >= MAX_DEVICE_EVICTIONS) {
+                        LOG.warn("Already evicted one device — waiting for login to complete");
+                        handlePostLoginSteps(page);
+                        page.waitForTimeout(5_000);
+                    } else if (!evictOneDeviceOnLimitPage(page, evictOnLimit, evictionAttempts)) {
+                        break;
+                    } else {
+                        handlePostLoginSteps(page);
+                    }
+                    continue;
+                }
+
+                if (isOnAuthProvider(page)) {
+                    waitForManualCaptchaIfPresent(page, credentials, allowAuthTokenResponses, capturedRefresh, deadline);
+                }
+
+                dismissAllLandingPopups(page);
+
+                if (!allowAuthTokenResponses.get()) {
+                    if (beginSubscriberLoginFlow(page, allowAuthTokenResponses)) {
+                        continue;
+                    }
+                    if (sessionResetAttempts < 2 && isGuestBrowsingPage(page)) {
+                        resetWebSession(page, context, browserUrl, allowAuthTokenResponses);
+                        sessionResetAttempts++;
+                        continue;
+                    }
+                }
+
+                if (!isOnAuthProvider(page)) {
+                    if (clickLoginEntryPointIfPresent(page)) {
+                        allowAuthTokenResponses.set(true);
+                    }
+                }
+
+                if (trySubmitCredentials(page, credentials)) {
+                    allowAuthTokenResponses.set(true);
+                    LOG.info("Submitted credentials on {}", page.url());
+                }
+
+                handlePostLoginSteps(page);
+
+                page.waitForTimeout(2_000);
+                try {
+                    page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(10_000));
+                } catch (Exception e) {
+                    LOG.debug("Network idle wait skipped: {}", e.getMessage());
+                }
+            } catch (com.microsoft.playwright.PlaywrightException e) {
+                if (page.isClosed() || String.valueOf(e.getMessage()).contains("closed")) {
+                    LOG.error(
+                            "Browser closed during subscriber login flow. Do not close the window manually; "
+                                    + "click Login With Astro ID and complete sign-in."
+                    );
                     break;
                 }
-                continue;
-            }
-
-            dismissAllLandingPopups(page);
-
-            if (!isOnAuthProvider(page)) {
-                clickLoginEntryPointIfPresent(page);
-            }
-
-            if (trySubmitCredentials(page, credentials)) {
-                LOG.info("Submitted credentials on {}", page.url());
-            }
-
-            handlePostLoginSteps(page);
-
-            page.waitForTimeout(2_000);
-            try {
-                page.waitForLoadState(LoadState.NETWORKIDLE, new Page.WaitForLoadStateOptions().setTimeout(10_000));
-            } catch (Exception e) {
-                LOG.debug("Network idle wait skipped: {}", e.getMessage());
+                throw e;
             }
         }
     }
 
+    /**
+     * Blocks guest auto-login by aborting {@code /v1/auth/token} until the Astro ID entry point is clicked.
+     */
+    private static boolean beginSubscriberLoginFlow(Page page, AtomicBoolean allowAuthTokenResponses) {
+        if (allowAuthTokenResponses.get()) {
+            return false;
+        }
+        dismissAllLandingPopups(page);
+        if (isOnAuthProvider(page)) {
+            allowAuthTokenResponses.set(true);
+            LOG.info("Auth provider page detected — allowing /v1/auth/token responses");
+            return true;
+        }
+        if (clickLoginEntryPointIfPresent(page)) {
+            allowAuthTokenResponses.set(true);
+            LOG.info("Subscriber login entry clicked — allowing /v1/auth/token responses");
+            return true;
+        }
+        return false;
+    }
+
+    private static boolean isGuestBrowsingPage(Page page) {
+        String url = page.url().toLowerCase();
+        if (url.contains("/hubmovies") || url.contains("/hubtv") || url.contains("/hubkids")) {
+            return true;
+        }
+        Locator guestBrowse = page.locator(
+                "button:has-text('Browse as Guest'), a:has-text('Browse as Guest'), "
+                        + "button:has-text('Continue As Guest'), a:has-text('Continue As Guest')"
+        );
+        return guestBrowse.count() == 0 && !isOnAuthProvider(page) && !clickableLoginEntryExists(page);
+    }
+
+    private static boolean clickableLoginEntryExists(Page page) {
+        String[] loginLabels = {
+                "Login With Astro ID",
+                "Login with Astro ID",
+                "Log in",
+                "Sign in",
+                "Login"
+        };
+        for (String label : loginLabels) {
+            Locator button = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.BUTTON,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (button.count() > 0 && button.first().isVisible()) {
+                return true;
+            }
+            Locator link = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.LINK,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (link.count() > 0 && link.first().isVisible()) {
+                return true;
+            }
+        }
+        Locator astroLogin = page.locator("button:has-text('Astro ID'), a:has-text('Astro ID')");
+        return astroLogin.count() > 0 && astroLogin.first().isVisible();
+    }
+
+    private static void resetWebSession(
+            Page page,
+            BrowserContext context,
+            String browserUrl,
+            AtomicBoolean allowAuthTokenResponses
+    ) {
+        LOG.warn(
+                "Guest session detected on {} — clearing cookies/storage and reloading {}",
+                page.url(),
+                browserUrl
+        );
+        allowAuthTokenResponses.set(false);
+        context.clearCookies();
+        try {
+            page.evaluate("() => { localStorage.clear(); sessionStorage.clear(); }");
+        } catch (Exception e) {
+            LOG.debug("Could not clear web storage: {}", e.getMessage());
+        }
+        page.navigate(browserUrl, new Page.NavigateOptions().setTimeout(60_000));
+        page.waitForLoadState(LoadState.DOMCONTENTLOADED);
+        dismissAllLandingPopups(page);
+        beginSubscriberLoginFlow(page, allowAuthTokenResponses);
+    }
+
+    private static boolean signOutGuestSessionIfPresent(Page page) {
+        openAccountMenuIfPresent(page);
+        String[] signOutLabels = {"Sign Out", "Sign out", "Log Out", "Log out", "Logout"};
+        for (String label : signOutLabels) {
+            Locator button = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.BUTTON,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (button.count() > 0 && button.first().isVisible()) {
+                LOG.info("Signing out guest session via '{}'", label);
+                button.first().click(new Locator.ClickOptions().setTimeout(10_000));
+                page.waitForTimeout(1_500);
+                return true;
+            }
+            Locator link = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.LINK,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (link.count() > 0 && link.first().isVisible()) {
+                LOG.info("Signing out guest session via link '{}'", label);
+                link.first().click(new Locator.ClickOptions().setTimeout(10_000));
+                page.waitForTimeout(1_500);
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static void openAccountMenuIfPresent(Page page) {
+        Locator userMenu = page.locator("button[aria-label='User action menu']:visible");
+        if (userMenu.count() > 0 && userMenu.first().isVisible()) {
+            LOG.debug("Opening user action menu");
+            userMenu.first().click(new Locator.ClickOptions().setForce(true).setTimeout(5_000));
+            page.waitForTimeout(500);
+            return;
+        }
+        String[] menuLabels = {"Account", "Profile", "My Account"};
+        for (String label : menuLabels) {
+            Locator button = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.BUTTON,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (button.count() > 0 && button.first().isVisible()) {
+                LOG.debug("Opening account/menu control: '{}'", label);
+                button.first().click(new Locator.ClickOptions().setForce(true).setTimeout(5_000));
+                page.waitForTimeout(500);
+                return;
+            }
+        }
+        Locator hamburger = page.locator("button[aria-label*='Menu' i]:visible, [class*='hamburger']:visible");
+        if (hamburger.count() > 0 && hamburger.first().isVisible()) {
+            LOG.debug("Opening navigation menu");
+            hamburger.first().click(new Locator.ClickOptions().setForce(true).setTimeout(5_000));
+            page.waitForTimeout(500);
+        }
+    }
+
     private static boolean isDeviceLimitPage(Page page) {
+        for (Page openPage : page.context().pages()) {
+            if (isDeviceLimitPageOn(openPage)) {
+                return true;
+            }
+        }
+        return isDeviceLimitPageOn(page);
+    }
+
+    private static boolean isDeviceLimitPageOn(Page page) {
         Locator limitHeading = page.locator("text=Device limit reached");
         return limitHeading.count() > 0 && limitHeading.first().isVisible();
+    }
+
+    private static Page resolveDeviceLimitPage(Page page) {
+        for (Page openPage : page.context().pages()) {
+            if (isDeviceLimitPageOn(openPage)) {
+                return openPage;
+            }
+        }
+        return page;
+    }
+
+    private static Locator findDeviceLimitLogoutButtons(Page page) {
+        Page target = resolveDeviceLimitPage(page);
+        Locator byRole = target.getByRole(
+                com.microsoft.playwright.options.AriaRole.BUTTON,
+                new Page.GetByRoleOptions().setName("Log Out")
+        );
+        if (byRole.count() > 0) {
+            return byRole;
+        }
+        return target.locator(
+                "button[class*='logoutButton'], button[name='Log Out'], button:has-text('Log Out')"
+        );
+    }
+
+    private static boolean isRecaptchaVisible(Page page) {
+        Page target = resolveLoginPage(page);
+        return target.locator("iframe[title*='recaptcha' i], iframe[src*='recaptcha']").count() > 0;
+    }
+
+    private static void waitForManualCaptchaIfPresent(
+            Page page,
+            Credentials credentials,
+            AtomicBoolean allowAuthTokenResponses,
+            AtomicReference<String> capturedRefresh,
+            long deadline
+    ) {
+        if (!isRecaptchaVisible(page)) {
+            return;
+        }
+        if (!isHeadedMode()) {
+            LOG.error(
+                    "reCAPTCHA on Astro ID login requires a visible browser. "
+                            + "Set vrgo.auth.browser.headed=true in secrets/vrgo-auth.test.local.properties "
+                            + "or VRGO_BROWSER_HEADED=true, then complete the CAPTCHA manually."
+            );
+            return;
+        }
+        LOG.warn(
+                "reCAPTCHA detected on Astro ID login — complete the challenge in the browser window, "
+                        + "then click Log In. Waiting up to {}s…",
+                Math.max(1L, (deadline - System.currentTimeMillis()) / 1000L)
+        );
+        allowAuthTokenResponses.set(true);
+        while (System.currentTimeMillis() < deadline
+                && capturedRefresh.get() == null
+                && isRecaptchaVisible(page)
+                && !isDeviceLimitPage(page)) {
+            page.waitForTimeout(2_000);
+            if (!isRecaptchaVisible(page)) {
+                trySubmitCredentials(page, credentials);
+            }
+        }
     }
 
     private static boolean isOnAuthProvider(Page page) {
@@ -532,10 +817,20 @@ public final class VrgoBrowserAuthRecovery {
         }
     }
 
-    private static void clickLoginEntryPointIfPresent(Page page) {
+    private static boolean clickLoginEntryPointIfPresent(Page page) {
+        if (clickVisibleLoginLocator(page, page.locator(
+                "[role='menuitem']:has-text('Astro ID'), "
+                        + "[role='menu'] :text('Login With Astro ID'), "
+                        + "[role='menu'] :text('Login with Astro ID'), "
+                        + ".headerActionMenu-module__guestDropdown :text('Astro ID')"
+        ))) {
+            return true;
+        }
+
         String[] loginLabels = {
                 "Login With Astro ID",
                 "Login with Astro ID",
+                "Log in with Astro ID",
                 "Log in",
                 "Sign in",
                 "Login"
@@ -545,62 +840,175 @@ public final class VrgoBrowserAuthRecovery {
                     com.microsoft.playwright.options.AriaRole.BUTTON,
                     new Page.GetByRoleOptions().setName(label)
             );
-            if (button.count() > 0 && button.first().isVisible()) {
+            if (clickVisibleLoginLocator(page, button)) {
                 LOG.info("Clicking login entry: '{}'", label);
-                button.first().click(new Locator.ClickOptions().setTimeout(15_000));
-                page.waitForTimeout(1_500);
-                return;
+                return true;
             }
             Locator link = page.getByRole(
                     com.microsoft.playwright.options.AriaRole.LINK,
                     new Page.GetByRoleOptions().setName(label)
             );
-            if (link.count() > 0 && link.first().isVisible()) {
+            if (clickVisibleLoginLocator(page, link)) {
                 LOG.info("Clicking login link: '{}'", label);
-                link.first().click();
-                page.waitForTimeout(1_500);
-                return;
+                return true;
+            }
+            Locator menuItem = page.getByRole(
+                    com.microsoft.playwright.options.AriaRole.MENUITEM,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (clickVisibleLoginLocator(page, menuItem)) {
+                LOG.info("Clicking login menu item: '{}'", label);
+                return true;
             }
         }
+
+        Locator astroLogin = page.locator(
+                "button:has-text('Astro ID'):visible, a:has-text('Astro ID'):visible, "
+                        + "[role='button']:has-text('Astro ID'):visible"
+        );
+        if (clickVisibleLoginLocator(page, astroLogin)) {
+            LOG.info("Clicking login entry via Astro ID text selector");
+            return true;
+        }
+
+        Locator userMenu = page.locator("button[aria-label='User action menu']:visible");
+        if (userMenu.count() > 0 && userMenu.first().isVisible()) {
+            LOG.info("Opening user action menu to reach Login With Astro ID");
+            userMenu.first().click(new Locator.ClickOptions().setForce(true).setTimeout(10_000));
+            page.waitForTimeout(800);
+            if (clickVisibleLoginLocator(page, page.locator(
+                    "[role='menuitem']:has-text('Astro ID'), "
+                            + "[role='menu'] :text('Login With Astro ID'), "
+                            + "[role='menu'] :text('Login with Astro ID')"
+            ))) {
+                LOG.info("Clicked Login With Astro ID from user action menu");
+                return true;
+            }
+        }
+        return false;
+    }
+
+    private static boolean clickVisibleLoginLocator(Page page, Locator locator) {
+        if (locator.count() == 0 || !locator.first().isVisible()) {
+            return false;
+        }
+        locator.first().click(new Locator.ClickOptions().setForce(true).setTimeout(15_000));
+        page.waitForTimeout(1_500);
+        return true;
     }
 
     private static boolean trySubmitCredentials(Page page, Credentials credentials) {
         Page target = resolveLoginPage(page);
-        Locator password = target.locator("input[type='password']:visible");
-        if (password.count() == 0) {
-            Locator identifier = findIdentifierField(target);
-            if (identifier != null && identifier.isVisible()) {
-                identifier.fill(credentials.username());
-                Locator continueBtn = target.locator(
-                        "button[type='submit'], button:has-text('Continue'), button:has-text('Next'), "
-                                + "button:has-text('Sign in'), button:has-text('Log in')"
-                ).first();
-                if (continueBtn.count() > 0 && continueBtn.isVisible()) {
-                    continueBtn.click();
-                    return true;
-                }
-            }
+        if (!isOnAuthProvider(target)) {
             return false;
         }
 
+        waitForAstroIdLoginForm(target);
+
         Locator identifier = findIdentifierField(target);
+        Locator password = findPasswordField(target);
+
+        if (identifier == null && password == null) {
+            LOG.debug("Astro ID login fields not found on {}", target.url());
+            return false;
+        }
+
+        boolean entered = false;
+
         if (identifier != null && identifier.isVisible()) {
-            String current = identifier.inputValue();
+            String current = safeInputValue(identifier);
             if (current == null || current.isBlank()) {
-                identifier.fill(credentials.username());
+                fillLoginField(identifier, credentials.username());
+                LOG.info("Entered Astro ID username on {}", target.url());
+                entered = true;
             }
         }
-        password.first().fill(credentials.password());
-        target.locator(
-                "button[type='submit'], button:has-text('Sign in'), button:has-text('Log in'), "
-                        + "button:has-text('Continue'), input[type='submit']"
-        ).first().click();
+
+        if (password != null && password.isVisible()) {
+            String currentPassword = safeInputValue(password);
+            if (currentPassword == null || currentPassword.isBlank()) {
+                fillLoginField(password, credentials.password());
+                LOG.info("Entered Astro ID password on {}", target.url());
+                entered = true;
+                if (clickLoginSubmitButton(target)) {
+                    LOG.info("Clicked LOG IN on {}", target.url());
+                    return true;
+                }
+                return entered;
+            }
+            LOG.debug("Astro ID password already entered on {} — waiting for redirect", target.url());
+            return false;
+        }
+
+        if (entered && identifier != null) {
+            return clickLoginSubmitButton(target);
+        }
+        return false;
+    }
+
+    private static void fillLoginField(Locator field, String value) {
+        field.click(new Locator.ClickOptions().setTimeout(10_000));
+        field.fill("");
+        field.fill(value);
+    }
+
+    private static String safeInputValue(Locator field) {
+        try {
+            return field.inputValue();
+        } catch (Exception e) {
+            return "";
+        }
+    }
+
+    private static Locator findPasswordField(Page page) {
+        Locator[] candidates = {
+                page.getByLabel("Password", new Page.GetByLabelOptions().setExact(false)),
+                page.locator("input[type='password']:visible"),
+                page.locator("input[name='password']:visible"),
+                page.locator("input[autocomplete='current-password']:visible")
+        };
+        for (Locator candidate : candidates) {
+            if (candidate.count() > 0 && candidate.first().isVisible()) {
+                return candidate.first();
+            }
+        }
+        return null;
+    }
+
+    private static boolean clickLoginSubmitButton(Page target) {
+        String[] submitLabels = {"LOG IN", "Log In", "Log in", "Sign in", "Continue", "Next"};
+        for (String label : submitLabels) {
+            Locator button = target.getByRole(
+                    com.microsoft.playwright.options.AriaRole.BUTTON,
+                    new Page.GetByRoleOptions().setName(label)
+            );
+            if (button.count() > 0 && button.first().isVisible()) {
+                button.first().click(new Locator.ClickOptions().setForce(true).setTimeout(10_000));
+                return true;
+            }
+        }
+
+        Locator submit = target.locator(
+                "button[type='submit']:visible, input[type='submit']:visible, "
+                        + "button:has-text('LOG IN'):visible, button:has-text('Log In'):visible"
+        ).first();
+        if (submit.count() > 0 && submit.isVisible()) {
+            submit.click(new Locator.ClickOptions().setForce(true).setTimeout(10_000));
+            return true;
+        }
+        target.keyboard().press("Enter");
         return true;
     }
 
     private static Page resolveLoginPage(Page page) {
         for (Page openPage : page.context().pages()) {
-            if (openPage.locator("input[type='password']").count() > 0) {
+            String url = openPage.url().toLowerCase();
+            if (url.contains("pink.cat") || url.contains("consumer-am") || url.contains("/login")) {
+                return openPage;
+            }
+        }
+        for (Page openPage : page.context().pages()) {
+            if (openPage.locator("input[type='password']:visible").count() > 0) {
                 return openPage;
             }
         }
@@ -609,19 +1017,44 @@ public final class VrgoBrowserAuthRecovery {
 
     private static Locator findIdentifierField(Page page) {
         Locator[] candidates = {
+                page.getByLabel("Email / Mobile Number", new Page.GetByLabelOptions().setExact(false)),
+                page.getByLabel("Email", new Page.GetByLabelOptions().setExact(false)),
+                page.getByLabel("Mobile Number", new Page.GetByLabelOptions().setExact(false)),
+                page.getByPlaceholder("Email", new Page.GetByPlaceholderOptions().setExact(false)),
                 page.locator("input[type='email']:visible"),
                 page.locator("input[name='identifier']:visible"),
                 page.locator("input[name='email']:visible"),
                 page.locator("input[name='username']:visible"),
                 page.locator("input[autocomplete='username']:visible"),
-                page.locator("input[type='text']:visible")
+                page.locator("input[id*='email' i]:visible"),
+                page.locator("input[id*='identifier' i]:visible")
         };
         for (Locator candidate : candidates) {
-            if (candidate.count() > 0) {
+            if (candidate.count() > 0 && candidate.first().isVisible()) {
                 return candidate.first();
             }
         }
+        Locator textInputs = page.locator("input[type='text']:visible");
+        if (textInputs.count() > 0) {
+            return textInputs.first();
+        }
         return null;
+    }
+
+    private static void waitForAstroIdLoginForm(Page target) {
+        try {
+            target.getByLabel("Email / Mobile Number", new Page.GetByLabelOptions().setExact(false))
+                    .first()
+                    .waitFor(new Locator.WaitForOptions().setTimeout(15_000));
+        } catch (Exception e) {
+            try {
+                target.locator("input[type='password']:visible, input[type='email']:visible")
+                        .first()
+                        .waitFor(new Locator.WaitForOptions().setTimeout(5_000));
+            } catch (Exception ignored) {
+                LOG.debug("Astro ID login form wait: {}", e.getMessage());
+            }
+        }
     }
 
     /**
@@ -632,7 +1065,8 @@ public final class VrgoBrowserAuthRecovery {
             boolean evictOnLimit,
             AtomicInteger evictionAttempts
     ) {
-        if (!isDeviceLimitPage(page)) {
+        Page limitPage = resolveDeviceLimitPage(page);
+        if (!isDeviceLimitPageOn(limitPage)) {
             return false;
         }
         if (!evictOnLimit) {
@@ -645,10 +1079,10 @@ public final class VrgoBrowserAuthRecovery {
             return false;
         }
 
-        if (isModalVisible(page)) {
-            if (confirmRemoveDeviceModal(page)) {
+        if (isModalVisible(limitPage)) {
+            if (confirmRemoveDeviceModal(limitPage)) {
                 evictionAttempts.set(1);
-                waitForModalToClose(page);
+                waitForModalToClose(limitPage);
                 LOG.info("Confirmed Remove Device on open modal (single eviction)");
                 return true;
             }
@@ -656,30 +1090,28 @@ public final class VrgoBrowserAuthRecovery {
             return false;
         }
 
-        Locator logoutButtons = page.locator(
-                "button[class*='logoutButton'], button[name='Log Out']"
-        );
+        Locator logoutButtons = findDeviceLimitLogoutButtons(limitPage);
         int count = logoutButtons.count();
         if (count == 0) {
             throw new IllegalStateException("Device limit page shown but no Log Out buttons found");
         }
 
         int lastIndex = count - 1;
-        LOG.warn("Device limit reached — removing last device only (index {} of {})", lastIndex, count);
+        LOG.warn("Device limit reached — clicking Log Out on last registered device (index {} of {})", lastIndex, count);
         Locator lastDeviceLogout = logoutButtons.nth(lastIndex);
         lastDeviceLogout.scrollIntoViewIfNeeded();
-        lastDeviceLogout.click(new Locator.ClickOptions().setTimeout(15_000));
+        lastDeviceLogout.click(new Locator.ClickOptions().setForce(true).setTimeout(15_000));
 
         page.waitForTimeout(2_000);
-        if (!confirmRemoveDeviceModal(page)) {
+        if (!confirmRemoveDeviceModal(limitPage)) {
             LOG.error("Log Out clicked on last device but 'Remove Device' confirm was not found");
             return false;
         }
 
         evictionAttempts.set(1);
-        waitForModalToClose(page);
-        page.waitForTimeout(5_000);
-        LOG.info("Removed one device from registered devices list");
+        waitForModalToClose(limitPage);
+        limitPage.waitForTimeout(5_000);
+        LOG.info("Removed one device from registered devices list — continuing login");
         return true;
     }
 
@@ -818,7 +1250,8 @@ public final class VrgoBrowserAuthRecovery {
             Page page,
             String authTokenPath,
             long timeoutMs,
-            AtomicReference<String> capturedRefresh
+            AtomicReference<String> capturedRefresh,
+            AtomicBoolean allowAuthTokenResponses
     ) {
         try {
             Response response = page.waitForResponse(
@@ -826,7 +1259,7 @@ public final class VrgoBrowserAuthRecovery {
                     new Page.WaitForResponseOptions().setTimeout(timeoutMs),
                     () -> page.waitForTimeout(500)
             );
-            captureRefreshFromResponse(response, authTokenPath, capturedRefresh);
+            captureRefreshFromResponse(response, authTokenPath, capturedRefresh, allowAuthTokenResponses);
         } catch (Exception e) {
             LOG.debug("Timed out waiting for auth token response: {}", e.getMessage());
         }
@@ -835,16 +1268,30 @@ public final class VrgoBrowserAuthRecovery {
     private static void captureRefreshFromResponse(
             Response response,
             String authTokenPath,
-            AtomicReference<String> capturedRefresh
+            AtomicReference<String> capturedRefresh,
+            AtomicBoolean allowAuthTokenResponses
     ) {
         if (!response.url().contains(authTokenPath) || response.status() != 200) {
+            return;
+        }
+        if (!allowAuthTokenResponses.get()) {
+            LOG.debug("Ignoring /v1/auth/token response until Astro ID login starts");
             return;
         }
         try {
             JsonNode json = MAPPER.readTree(response.text());
             JsonNode refresh = json.get("refresh_token");
             if (refresh != null && !refresh.asText().isBlank()) {
-                capturedRefresh.set(refresh.asText());
+                String token = refresh.asText().strip();
+                if (VrgoJwtUtils.isGuestToken(token)) {
+                    LOG.warn(
+                            "Ignoring guest refresh_token from {} — complete Login With Astro ID "
+                                    + "(not Browse as Guest). Subscriber recovery uses vrgo.auth.browser.url (hubHome).",
+                            response.url()
+                    );
+                    return;
+                }
+                capturedRefresh.set(token);
                 LOG.info("Captured refresh_token from {}", response.url());
             }
         } catch (Exception e) {
@@ -867,6 +1314,9 @@ public final class VrgoBrowserAuthRecovery {
                 System.getProperty("vrgo.auth.browser.headed"),
                 System.getenv("VRGO_BROWSER_HEADED")
         );
+        if (flag == null || flag.isBlank()) {
+            return false;
+        }
         return "true".equalsIgnoreCase(flag);
     }
 

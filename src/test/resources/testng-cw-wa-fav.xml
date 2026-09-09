@@ -1,0 +1,20 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<!--
+  ContinueWatch + WatchAgain + WatchlistFavourite only.
+  Run: scripts/run-cw-wa-fav-tests.bat  OR
+       mvn clean test -Ptest -Dsurefire.suiteXmlFiles=src/test/resources/testng-cw-wa-fav.xml
+-->
+<suite name="ContinueWatch / WatchAgain / Favourites Suite" verbose="1" parallel="false">
+    <listeners>
+        <listener class-name="com.automation.api.listeners.SuiteBootstrapListener"/>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+    </listeners>
+    <test name="ContinueWatch + WatchAgain + Favourites" preserve-order="true">
+        <classes>
+            <class name="com.automation.api.tests.ContinueWatch"/>
+            <class name="com.automation.api.tests.WatchAgain"/>
+            <class name="com.automation.api.tests.WatchlistFavourite"/>
+        </classes>
+    </test>
+</suite>

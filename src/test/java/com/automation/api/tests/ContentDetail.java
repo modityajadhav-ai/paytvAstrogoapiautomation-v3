@@ -36,7 +36,7 @@ import static org.hamcrest.Matchers.notNullValue;
  * VRGO content-detail-service regression: series (close/open), season/series episodes, view-all, tv_show,
  * episode-hierarchy (NEXT|CURRENT|PREVIOUS) vs BingeWatch episode adjacent (NEXT|PREVIOUS on {@code /episode/...}),
  * movie, boxset (+ binge, childs), trailer, linear (channel, on-air, dates, events, channel-day, 48hr, EPG,
- * bouquet next/prev), MyBox channels/genres, channel filters, mini-mybox, 3PP VOD (movie / episode / season).
+ * bouquet next/prev), MyBox (channels, genres, v1 day grid), channel filters, mini-mybox, 3PP VOD (movie / episode / season).
  */
 @Feature("Content detail")
 public class ContentDetail extends BaseTest {
@@ -672,6 +672,20 @@ public class ContentDetail extends BaseTest {
     public void myboxGenres_returns200() {
         Response r = contentDetailApi.getMyboxGenresRaw();
         attachAndAssertEnvelope(r, "content-detail-mybox-genres", "vrgo.content.detail.mybox.genres.expected.message");
+    }
+
+    @Test(priority = 215, description = "GET mybox/{dayEpochMs} with limit, offset — full MyBox EPG grid")
+    @Story("GET /content-detail-service/pub/v1/mybox/{dayEpochMs}")
+    public void mybox_returns200() {
+        long epoch = pickEpochMs(
+                "vrgo.content.detail.mybox.epoch.ms",
+                "vrgo.content.detail.channel.day.timezone"
+        );
+        int limit = parsePositiveInt(config.getProperty("vrgo.content.detail.mybox.limit"), 1000);
+        int offset = parseNonNegativeInt(config.getProperty("vrgo.content.detail.mybox.offset"), 0);
+        Allure.parameter("mybox.epochMs", String.valueOf(epoch));
+        Response r = contentDetailApi.getMyboxRaw(epoch, limit, offset);
+        attachAndAssertEnvelope(r, "content-detail-mybox", "vrgo.content.detail.mybox.expected.message");
     }
 
     @Test(priority = 220, description = "GET filter/ — channel filter catalogue (data array of name, channelKey)")

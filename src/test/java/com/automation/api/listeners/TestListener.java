@@ -1,5 +1,6 @@
 package com.automation.api.listeners;
 
+import com.automation.api.base.BaseTest;
 import com.aventstack.extentreports.ExtentTest;
 import com.aventstack.extentreports.Status;
 import org.slf4j.Logger;
@@ -17,6 +18,8 @@ public class TestListener implements ITestListener {
 
     @Override
     public void onStart(ITestContext context) {
+        // Runs for Surefire dynamic suites (-Dtest=...) and testng.xml — unlike SuiteBootstrapListener in XML only.
+        BaseTest.bootstrapSuite();
         LOG.info("Starting suite: {}", context.getName());
     }
 
@@ -81,7 +84,11 @@ public class TestListener implements ITestListener {
     public void onTestSkipped(ITestResult result) {
         Throwable t = result.getThrowable();
         long duration = result.getEndMillis() - result.getStartMillis();
-        LOG.warn("Test skipped: {}", result.getName());
+        LOG.warn(
+                "Test skipped: {}{}",
+                result.getName(),
+                t != null && t.getMessage() != null ? " — " + t.getMessage() : ""
+        );
 
         ExtentTest test = ExtentReportManager.getCurrentTest();
         if (test != null) {

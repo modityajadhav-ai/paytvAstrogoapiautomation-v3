@@ -14,7 +14,7 @@ import java.util.Map;
 /**
  * VRGO content-detail-service: series (close/open), seasons, episodes, tv_show, BingeWatch ({@code /episode/...}),
  * episode-hierarchy, movie, boxset (+ binge, childs),
- * trailers, linear (channel, on-air, dates, events, channel-day, 48hr, EPG, bouquet next/prev), MyBox,
+ * trailers, linear (channel, on-air, dates, events, channel-day, 48hr, EPG, bouquet next/prev), MyBox (channels, genres, v1 day grid),
  * channel filters, mini-mybox, series/episode view-all, boxset childs, 3PP VOD editorial (movie / episode / season).
  * <p>
  * Auth and static headers match other VRGO clients: {@code vrgo.bearer.token} / {@code VRGO_BEARER_TOKEN},
@@ -48,6 +48,7 @@ public class ContentDetailApiClient extends BaseApiClient {
     private final String channelNeighborPath;
     private final String myboxChannelsPath;
     private final String myboxGenresPath;
+    private final String myboxPath;
     private final String channelFiltersPath;
     private final String miniMyboxPath;
     private final String threePpVodMoviePath;
@@ -147,6 +148,10 @@ public class ContentDetailApiClient extends BaseApiClient {
         this.myboxGenresPath = config.getProperty(
                 "vrgo.content.detail.mybox.genres.path",
                 "/content-detail-service/pub/v1/mybox/genres"
+        );
+        this.myboxPath = config.getProperty(
+                "vrgo.content.detail.mybox.path",
+                "/content-detail-service/pub/v1/mybox/{dayEpochMs}"
         );
         this.channelFiltersPath = config.getProperty(
                 "vrgo.content.detail.channel.filters.path",
@@ -441,6 +446,16 @@ public class ContentDetailApiClient extends BaseApiClient {
         return vrgoGiven()
                 .when()
                 .get(myboxGenresPath);
+    }
+
+    /** GET {@code /pub/v1/mybox/{dayEpochMs}} — full MyBox EPG grid for the given day. */
+    public Response getMyboxRaw(long dayEpochMs, int limit, int offset) {
+        return vrgoGiven()
+                .pathParam("dayEpochMs", dayEpochMs)
+                .queryParam("limit", limit)
+                .queryParam("offset", offset)
+                .when()
+                .get(myboxPath);
     }
 
     public Response getChannelFiltersRaw() {

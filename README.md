@@ -1,6 +1,8 @@
 # API Automation Framework
 
-Maven-based API test automation using **REST Assured**, **TestNG**, **Allure**, and **Logback**. Sample tests target the public [ReqRes](https://reqres.in/) API so you can run the suite without credentials.
+Maven-based API test automation using **REST Assured**, **TestNG**, **Allure**, and **Logback** for **VRGO / Astro GO** API regression.
+
+**New team members:** start with [docs/TEAM-ONBOARDING.md](docs/TEAM-ONBOARDING.md) for clone, auth, and first test run.
 
 ## Prerequisites
 

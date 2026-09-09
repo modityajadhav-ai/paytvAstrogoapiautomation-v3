@@ -22,7 +22,6 @@ import com.automation.api.config.EnvironmentConfig;
 import io.qameta.allure.restassured.AllureRestAssured;
 import io.restassured.RestAssured;
 import org.slf4j.LoggerFactory;
-import org.testng.annotations.BeforeSuite;
 import org.testng.annotations.Listeners;
 
 import java.io.File;
@@ -74,17 +73,38 @@ public abstract class BaseTest {
         return config != null && com.automation.api.auth.VrgoAuthSupport.hasBearerCredential(config);
     }
 
-    @BeforeSuite(alwaysRun = true)
-    public static void suiteSetup() {
+    /**
+     * Suite bootstrap — invoked by {@link com.automation.api.listeners.SuiteBootstrapListener},
+     * not {@code @BeforeSuite}, so Allure does not report it as test {@code suiteSetup}.
+     */
+    public static void bootstrapSuite() {
+        if (config != null) {
+            return;
+        }
+
         RestAssured.filters(new AllureRestAssured());
 
         VrgoAuthSecretsLoader.loadLocalSecretsIfPresent();
         applyOptionalVrgoOverrides();
 
         config = EnvironmentConfig.load();
-        VrgoTokenHolder.initialize(config);
+        try {
+            VrgoTokenHolder.initialize(config);
+        } catch (RuntimeException e) {
+            LoggerFactory.getLogger(BaseTest.class).warn(
+                    "VRGO subscriber token bootstrap failed; API clients will still load and tests may skip: {}",
+                    e.getMessage()
+            );
+        }
         if (isGuestTestsEnabled()) {
-            VrgoGuestTokenHolder.initialize(config);
+            try {
+                VrgoGuestTokenHolder.initialize(config);
+            } catch (RuntimeException e) {
+                LoggerFactory.getLogger(BaseTest.class).warn(
+                        "VRGO guest token bootstrap failed; guest tests may skip: {}",
+                        e.getMessage()
+                );
+            }
         }
 
         userApi = new UserApiClient(config);

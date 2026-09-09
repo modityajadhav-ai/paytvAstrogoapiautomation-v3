@@ -72,7 +72,14 @@ public final class VrgoTokenHolder {
         }
         synchronized (VrgoTokenHolder.class) {
             instance = new VrgoTokenHolder(config);
-            instance.ensureValidAccessToken();
+            try {
+                instance.ensureValidAccessToken();
+            } catch (IllegalStateException e) {
+                LOG.warn(
+                        "VRGO subscriber auth not ready at suite bootstrap (first API call or test will retry/skip): {}",
+                        e.getMessage()
+                );
+            }
         }
     }
 
@@ -121,8 +128,8 @@ public final class VrgoTokenHolder {
     }
 
     private void loadCredentials() {
-        String seedRefresh = resolveSeedRefreshToken();
-        String cachedRefresh = loadRefreshTokenFromCache();
+        String seedRefresh = rejectGuestRefreshToken(resolveSeedRefreshToken(), "secrets/env");
+        String cachedRefresh = rejectGuestRefreshToken(loadRefreshTokenFromCache(), "token cache");
         String cachedAccess = loadAccessTokenFromCache();
 
         boolean forceSeed = "true".equalsIgnoreCase(
@@ -161,6 +168,20 @@ public final class VrgoTokenHolder {
                 VrgoAuthSecretsLoader.resolveEnvironmentVariable("VRGO_REFRESH_TOKEN"),
                 System.getProperty("vrgo.refresh.token")
         );
+    }
+
+    private static String rejectGuestRefreshToken(String token, String source) {
+        if (token == null || token.isBlank()) {
+            return null;
+        }
+        if (VrgoJwtUtils.isGuestToken(token)) {
+            LOG.error(
+                    "Ignoring guest refresh token from {} — use Astro ID login refresh_token for subscriber tests.",
+                    source
+            );
+            return null;
+        }
+        return token.strip();
     }
 
     private String loadRefreshTokenFromCache() {
@@ -253,12 +274,22 @@ public final class VrgoTokenHolder {
         if (recovered == null || recovered.isBlank()) {
             return false;
         }
+        if (VrgoJwtUtils.isGuestToken(recovered)) {
+            LOG.error(
+                    "Browser recovery captured a guest refresh_token. Complete Astro ID login "
+                            + "(Login With Astro ID), not Browse as Guest, then re-run."
+            );
+            return false;
+        }
         this.refreshToken = recovered.strip();
         System.setProperty("vrgo.refresh.token", refreshToken);
         VrgoAuthSecretsWriter.persistRefreshToken(refreshToken);
         invalidateCache();
         if (tryRefreshWithToken(refreshToken)) {
-            LOG.info("Recovered VRGO session via headless browser login");
+            LOG.info(
+                    "Recovered VRGO session via browser login; refresh_token saved to {} and tests will continue",
+                    VrgoAuthSecretsLoader.resolveLocalSecretsPath().toAbsolutePath()
+            );
             return true;
         }
         LOG.warn(
@@ -279,6 +310,14 @@ public final class VrgoTokenHolder {
 
         String accountToken = refreshResponse.getAccessToken().strip();
         String newRefresh = firstNonBlank(refreshResponse.getRefreshToken(), grantRefresh);
+
+        if (VrgoJwtUtils.isGuestToken(accountToken)) {
+            LOG.warn(
+                    "Refresh grant returned a guest access token — subscriber Astro ID login is required "
+                            + "for Continue Watch / Favourites APIs."
+            );
+            return false;
+        }
 
         if (VrgoJwtUtils.hasProfileId(accountToken)) {
             applyTokens(accountToken, newRefresh);

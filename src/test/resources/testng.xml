@@ -6,6 +6,8 @@
 
     <listeners>
 
+        <listener class-name="com.automation.api.listeners.SuiteBootstrapListener"/>
+
         <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
 
     </listeners>

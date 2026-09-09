@@ -1,0 +1,18 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE suite SYSTEM "https://testng.org/testng-1.0.dtd">
+<!--
+  VRSearchProxy only (logged-in + guest search-proxy tests).
+  Run: scripts/run-vr-search-proxy.bat [env]  OR
+       mvn test -Pprod -Dsurefire.suiteXmlFiles=src/test/resources/testng-vr-search-proxy.xml
+-->
+<suite name="VR Search Proxy Suite" verbose="1" parallel="false">
+    <listeners>
+        <listener class-name="com.automation.api.listeners.SuiteBootstrapListener"/>
+        <listener class-name="io.qameta.allure.testng.AllureTestNg"/>
+    </listeners>
+    <test name="VRSearchProxy" preserve-order="true">
+        <classes>
+            <class name="com.automation.api.tests.VRSearchProxy"/>
+        </classes>
+    </test>
+</suite>

@@ -27,7 +27,7 @@ import static org.hamcrest.Matchers.notNullValue;
 /**
  * VRGO favourites / watchlist: clear list, POST structured content (movie, series, channel, boxset),
  * optional negative season POST (expect 400), GET favourite-channels list, negative TV-show POST (expect 400),
- * GET full favourites verification, teardown clear.
+ * GET favourites verification per content type ({@code VOD} vs {@code LIVE}), teardown clear.
  * <p>
  * POST {@code /v3/favourites?region=...} body uses API content types: {@code MOVIE}, {@code VOD} (series),
  * {@code LIVE} (channel), {@code BOXSET}. Season and TV episode favourite attempts must return {@code 400} and
@@ -140,13 +140,13 @@ public class WatchlistFavourite extends BaseTest {
     @Test(
             priority = 15,
             dependsOnMethods = "favourites_flow_postTvShow_expectHttp400",
-            description = "GET favourites — each successful POST id present; negative TV episode and season ids absent"
+            description = "GET favourites (contentTypes=VOD) — movie, series, boxset present; negative TV episode and season absent"
     )
     @Story("GET /subscriber-event-service/v3/favourites")
-    public void favourites_flow_getVerifyAddedIdsExcludeTvShow() {
+    public void favourites_flow_getVerifyVodAddedIdsExcludeTvShow() {
         requireFavouritesPrerequisites();
 
-        Response r = getFavouritesListAndAttachAllure("favourites-verify-after-posts");
+        Response r = getFavouritesListAndAttachAllure("favourites-verify-vod-after-posts", "VOD");
         r.then()
                 .statusCode(200)
                 .body("status", equalTo(true))
@@ -154,7 +154,6 @@ public class WatchlistFavourite extends BaseTest {
 
         assertPresentIfConfigured(r, "movie", "vrgo.favourites.add.movie.content.id");
         assertPresentIfConfigured(r, "series", "vrgo.favourites.add.series.content.id");
-        assertPresentIfConfigured(r, "channel", "vrgo.favourites.add.channel.content.id");
         assertPresentIfConfigured(r, "boxset", "vrgo.favourites.add.boxset.content.id");
 
         assertAbsentIfConfigured(r, "TV episode", "vrgo.favourites.negative.tvshow.content.id");
@@ -168,8 +167,26 @@ public class WatchlistFavourite extends BaseTest {
     }
 
     @Test(
+            priority = 16,
+            dependsOnMethods = "favourites_flow_getVerifyVodAddedIdsExcludeTvShow",
+            description = "GET favourites (contentTypes=LIVE) — configured channel id present"
+    )
+    @Story("GET /subscriber-event-service/v3/favourites")
+    public void favourites_flow_getVerifyLiveChannelPresent() {
+        requireFavouritesPrerequisites();
+
+        Response r = getFavouritesListAndAttachAllure("favourites-verify-live-after-posts", "LIVE");
+        r.then()
+                .statusCode(200)
+                .body("status", equalTo(true))
+                .body("data", notNullValue());
+
+        assertPresentIfConfigured(r, "channel", "vrgo.favourites.add.channel.content.id");
+    }
+
+    @Test(
             priority = 20,
-            dependsOnMethods = "favourites_flow_getVerifyAddedIdsExcludeTvShow",
+            dependsOnMethods = "favourites_flow_getVerifyLiveChannelPresent",
             alwaysRun = true,
             description = "Teardown: GET favourites first page and DELETE each item"
     )
@@ -224,13 +241,26 @@ public class WatchlistFavourite extends BaseTest {
     }
 
     private void clearFavouritesFirstPageInternal(String attachmentPrefix) {
-        Response getResponse = getFavouritesListAndAttachAllure(attachmentPrefix);
+        int totalAttempted = 0;
+        int totalUniqueIds = 0;
+        for (String contentType : List.of("VOD", "LIVE")) {
+            int[] counts = clearFavouritesFirstPageForContentType(attachmentPrefix + "-" + contentType.toLowerCase(Locale.ROOT), contentType);
+            totalAttempted += counts[0];
+            totalUniqueIds += counts[1];
+        }
+        Allure.parameter("favourites.delete.attempted", String.valueOf(totalAttempted));
+        Allure.parameter("favourites.delete.uniqueContentIds", String.valueOf(totalUniqueIds));
+    }
+
+    /** @return {@code [deleteAttempts, uniqueContentIds]} for the given content type page */
+    private int[] clearFavouritesFirstPageForContentType(String attachmentPrefix, String contentType) {
+        Response getResponse = getFavouritesListAndAttachAllure(attachmentPrefix, contentType);
         getResponse.then().statusCode(200).body("status", equalTo(true));
 
         List<Map<String, Object>> rows = FavouritesListJsonSupport.listRowsFromGetResponse(getResponse);
         if (rows.isEmpty()) {
-            Allure.parameter("favourites.delete.attempted", "0");
-            return;
+            Allure.parameter("favourites.delete." + contentType + ".attempted", "0");
+            return new int[] {0, 0};
         }
 
         Set<String> uniqueIds = new LinkedHashSet<>();
@@ -247,8 +277,9 @@ public class WatchlistFavourite extends BaseTest {
             del.then().statusCode(anyOf(is(200), is(204)));
             attempted++;
         }
-        Allure.parameter("favourites.delete.attempted", String.valueOf(attempted));
-        Allure.parameter("favourites.delete.uniqueContentIds", String.valueOf(uniqueIds.size()));
+        Allure.parameter("favourites.delete." + contentType + ".attempted", String.valueOf(attempted));
+        Allure.parameter("favourites.delete." + contentType + ".uniqueContentIds", String.valueOf(uniqueIds.size()));
+        return new int[] {attempted, uniqueIds.size()};
     }
 
     private void sleepBetweenFavouritePosts() {
@@ -268,21 +299,21 @@ public class WatchlistFavourite extends BaseTest {
         return firstNonBlank(config.getProperty("vrgo.favourites.region"), "Malaysia");
     }
 
-    private Response getFavouritesListAndAttachAllure(String attachmentName) {
+    private Response getFavouritesListAndAttachAllure(String attachmentName, String contentType) {
         int offset = readIntProperty("vrgo.favourites.offset", 0);
         int limit = readIntProperty("vrgo.favourites.limit", 100);
-        String contentTypes = firstNonBlank(config.getProperty("vrgo.favourites.content.types"), "LIVE,VOD");
         String region = favouritesRegion();
         boolean ent = readBooleanProperty("vrgo.favourites.is.entitlement.enabled", false);
+        String singleContentType = contentType.strip().toUpperCase(Locale.ROOT);
 
         Allure.parameter("environment", Environment.current().name());
         Allure.parameter("favourites.offset", String.valueOf(offset));
         Allure.parameter("favourites.limit", String.valueOf(limit));
-        Allure.parameter("favourites.contentTypes", contentTypes);
+        Allure.parameter("favourites.contentTypes", singleContentType);
         Allure.parameter("favourites.region", region);
         Allure.parameter("favourites.isEntitlementEnabled", String.valueOf(ent));
 
-        Response r = favouritesApi.getFavouritesRaw(offset, limit, contentTypes, region, ent);
+        Response r = favouritesApi.getFavouritesRaw(offset, limit, singleContentType, region, ent);
         AllureAttachmentUtils.attachJson(attachmentName, r.asString());
         return r;
     }

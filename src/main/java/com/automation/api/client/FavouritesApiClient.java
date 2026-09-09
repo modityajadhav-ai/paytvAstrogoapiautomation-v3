@@ -50,7 +50,7 @@ public class FavouritesApiClient extends BaseApiClient {
     }
 
     /**
-     * GET subscriber favourites (subscriber-event), e.g. {@code contentTypes=LIVE,VOD}.
+     * GET subscriber favourites (subscriber-event); {@code contentTypes} must be a single value: {@code VOD} or {@code LIVE}.
      */
     public Response getFavouritesRaw(int offset, int limit, String contentTypes, String region, boolean isEntitlementEnabled) {
         return vrgoGiven()

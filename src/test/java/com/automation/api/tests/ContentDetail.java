@@ -12,7 +12,6 @@ import io.restassured.response.Response;
 import org.testng.Assert;
 import org.testng.SkipException;
 import org.testng.annotations.BeforeClass;
-import org.testng.annotations.DataProvider;
 import org.testng.annotations.Test;
 
 import java.util.ArrayList;
@@ -48,9 +47,9 @@ public class ContentDetail extends BaseTest {
         }
     }
 
-    @Test(priority = 10, description = "GET close-series editorial detail (series/{id})")
-    @Story("GET /content-detail-service/pub/v1/series/{seriesId} — close series")
-    public void closeSeriesDetail_returns200() {
+    @Test(priority = 10, description = "CD_2.1_v1_closedSeriesDetail_Valid")
+    @Story("CD_2.1_v1_closedSeriesDetail_Valid — GET /content-detail-service/pub/v1/series/{seriesId}")
+    public void CD_2_1_v1_closedSeriesDetail_Valid() {
         String seriesId = stripOrEmpty(config.getProperty("vrgo.content.detail.close.series.id"));
         if (!isConfiguredId(seriesId)) {
             throw new SkipException("Set vrgo.content.detail.close.series.id.");
@@ -65,9 +64,9 @@ public class ContentDetail extends BaseTest {
         assertOperatorMetaPresent(r);
     }
 
-    @Test(priority = 20, description = "GET open-series editorial detail (series/{id})")
-    @Story("GET /content-detail-service/pub/v1/series/{seriesId} — open series")
-    public void openSeriesDetail_returns200() {
+    @Test(priority = 20, description = "CD_2.3_v1_openSeriesDetail_Valid")
+    @Story("CD_2.3_v1_openSeriesDetail_Valid — GET /content-detail-service/pub/v1/series/{seriesId}")
+    public void CD_2_3_v1_openSeriesDetail_Valid() {
         String seriesId = stripOrEmpty(config.getProperty("vrgo.content.detail.open.series.id"));
         if (!isConfiguredId(seriesId)) {
             throw new SkipException("Set vrgo.content.detail.open.series.id.");
@@ -82,9 +81,9 @@ public class ContentDetail extends BaseTest {
         assertOperatorMetaPresent(r);
     }
 
-    @Test(priority = 30, description = "GET season_episode list for close-series season 1")
-    @Story("GET /content-detail-service/pub/v1/season_episode/{seasonId}")
-    public void seasonEpisodes_closeSeriesSeason_returns200() {
+    @Test(priority = 30, description = "CD_2.2_v1_seasonEpisodeDetail_Valid")
+    @Story("CD_2.2_v1_seasonEpisodeDetail_Valid — GET /content-detail-service/pub/v1/season_episode/{seasonId}")
+    public void CD_2_2_v1_seasonEpisodeDetail_Valid() {
         String seasonId = stripOrEmpty(config.getProperty("vrgo.content.detail.season1.id"));
         if (!isConfiguredId(seasonId)) {
             throw new SkipException("Set vrgo.content.detail.season1.id.");
@@ -97,9 +96,9 @@ public class ContentDetail extends BaseTest {
         assertAnyOperatorLabelPresent(r);
     }
 
-    @Test(priority = 40, description = "GET series_episode list for open-series editorial id")
-    @Story("GET /content-detail-service/pub/v1/series_episode/{seriesId}")
-    public void seriesEpisodes_openSeries_returns200() {
+    @Test(priority = 40, description = "CD_2.4_v1_seriesEpisodeDetail_Valid")
+    @Story("CD_2.4_v1_seriesEpisodeDetail_Valid — GET /content-detail-service/pub/v1/series_episode/{seriesId}")
+    public void CD_2_4_v1_seriesEpisodeDetail_Valid() {
         String seriesId = stripOrEmpty(config.getProperty("vrgo.content.detail.open.series.id"));
         if (!isConfiguredId(seriesId)) {
             throw new SkipException("Set vrgo.content.detail.open.series.id.");
@@ -111,22 +110,25 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-series-episodes-open", null);
     }
 
-    @DataProvider(name = "seriesEpisodeViewAllTypes")
-    public static Object[][] seriesEpisodeViewAllTypes() {
-        return new Object[][]{
-                {"NEXT"},
-                {"PREVIOUS"},
-                {"PREVIOUS_NEXT"}
-        };
+    @Test(priority = 50, description = "CD_2.21_v1_viewAll_Next_Valid")
+    @Story("CD_2.21_v1_viewAll_Next_Valid — GET /content-detail-service/pub/v1/series/{seriesId}/episode/{episodeId}")
+    public void CD_2_21_v1_viewAll_Next_Valid() {
+        assertSeriesEpisodeViewAll("NEXT");
     }
 
-    @Test(
-            priority = 50,
-            dataProvider = "seriesEpisodeViewAllTypes",
-            description = "GET series/{seriesId}/episode/{episodeId} view-all with type=NEXT|PREVIOUS|PREVIOUS_NEXT"
-    )
-    @Story("GET /content-detail-service/pub/v1/series/{seriesId}/episode/{episodeId}")
-    public void seriesEpisodeViewAll_queryType_returns200(String type) {
+    @Test(priority = 51, description = "CD_2.21_v1_viewAll_Previous_Valid")
+    @Story("CD_2.21_v1_viewAll_Previous_Valid — GET /content-detail-service/pub/v1/series/{seriesId}/episode/{episodeId}")
+    public void CD_2_21_v1_viewAll_Previous_Valid() {
+        assertSeriesEpisodeViewAll("PREVIOUS");
+    }
+
+    @Test(priority = 52, description = "CD_2.21_v1_viewAll_PreviousNext_Valid")
+    @Story("CD_2.21_v1_viewAll_PreviousNext_Valid — GET /content-detail-service/pub/v1/series/{seriesId}/episode/{episodeId}")
+    public void CD_2_21_v1_viewAll_PreviousNext_Valid() {
+        assertSeriesEpisodeViewAll("PREVIOUS_NEXT");
+    }
+
+    private void assertSeriesEpisodeViewAll(String type) {
         String seriesId = firstNonBlank(
                 config.getProperty("vrgo.content.detail.viewall.series.id"),
                 config.getProperty("vrgo.content.detail.close.series.id")
@@ -165,9 +167,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "series-episode-viewall-" + type, "vrgo.content.detail.viewall.expected.message");
     }
 
-    @Test(priority = 60, description = "GET tv_show for configured episode editorial id")
-    @Story("GET /content-detail-service/pub/v1/tv_show/{episodeId}")
-    public void tvShow_episode_returns200() {
+    @Test(priority = 60, description = "CD_2.5_v1_episodeDetail_Valid")
+    @Story("CD_2.5_v1_episodeDetail_Valid — GET /content-detail-service/pub/v1/tv_show/{episodeId}")
+    public void CD_2_5_v1_episodeDetail_Valid() {
         String episodeId = stripOrEmpty(config.getProperty("vrgo.content.detail.tv.show.episode.id"));
         if (!isConfiguredId(episodeId)) {
             throw new SkipException("Set vrgo.content.detail.tv.show.episode.id.");
@@ -180,21 +182,19 @@ public class ContentDetail extends BaseTest {
         assertOperatorMetaPresent(r);
     }
 
-    @DataProvider(name = "bingeWatchEpisodeDirections")
-    public static Object[][] bingeWatchEpisodeDirections() {
-        return new Object[][]{
-                {"NEXT"},
-                {"PREVIOUS"}
-        };
+    @Test(priority = 65, description = "CD_2.14_v1_bingeWatch_Next_Valid")
+    @Story("CD_2.14_v1_bingeWatch_Next_Valid — GET /content-detail-service/pub/v1/episode/{episodeId}/NEXT")
+    public void CD_2_14_v1_bingeWatch_Next_Valid() {
+        assertBingeWatchEpisode("NEXT");
     }
 
-    @Test(
-            priority = 65,
-            dataProvider = "bingeWatchEpisodeDirections",
-            description = "BingeWatch: GET episode/{episodeId}/{direction} — adjacent episode; direction NEXT or PREVIOUS only"
-    )
-    @Story("BingeWatch — GET /content-detail-service/pub/v1/episode/{episodeId}/{direction} (NEXT|PREVIOUS)")
-    public void bingeWatch_episodeAdjacent_returns200(String direction) {
+    @Test(priority = 66, description = "CD_2.14_v1_bingeWatch_Previous_Valid")
+    @Story("CD_2.14_v1_bingeWatch_Previous_Valid — GET /content-detail-service/pub/v1/episode/{episodeId}/PREVIOUS")
+    public void CD_2_14_v1_bingeWatch_Previous_Valid() {
+        assertBingeWatchEpisode("PREVIOUS");
+    }
+
+    private void assertBingeWatchEpisode(String direction) {
         String episodeId = resolveBingeWatchEpisodeId();
         if (!isConfiguredId(episodeId)) {
             throw new SkipException(
@@ -211,22 +211,25 @@ public class ContentDetail extends BaseTest {
         );
     }
 
-    @DataProvider(name = "episodeHierarchyThreeStateDirections")
-    public static Object[][] episodeHierarchyThreeStateDirections() {
-        return new Object[][]{
-                {"NEXT"},
-                {"CURRENT"},
-                {"PREVIOUS"}
-        };
+    @Test(priority = 70, description = "CD_2.20_v1_episodeHierarchy_Next_Valid")
+    @Story("CD_2.20_v1_episodeHierarchy_Next_Valid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/NEXT")
+    public void CD_2_20_v1_episodeHierarchy_Next_Valid() {
+        assertEpisodeHierarchy("NEXT");
     }
 
-    @Test(
-            priority = 70,
-            dataProvider = "episodeHierarchyThreeStateDirections",
-            description = "Episode hierarchy: GET episode-hierarchy/{episodeId}/{direction} — three-state NEXT|CURRENT|PREVIOUS"
-    )
-    @Story("Episode hierarchy — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/{direction} (NEXT|CURRENT|PREVIOUS)")
-    public void episodeHierarchy_threeState_returns200(String direction) {
+    @Test(priority = 71, description = "CD_2.20_v1_episodeHierarchy_Current_Valid")
+    @Story("CD_2.20_v1_episodeHierarchy_Current_Valid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/CURRENT")
+    public void CD_2_20_v1_episodeHierarchy_Current_Valid() {
+        assertEpisodeHierarchy("CURRENT");
+    }
+
+    @Test(priority = 72, description = "CD_2.20_v1_episodeHierarchy_Previous_Valid")
+    @Story("CD_2.20_v1_episodeHierarchy_Previous_Valid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/PREVIOUS")
+    public void CD_2_20_v1_episodeHierarchy_Previous_Valid() {
+        assertEpisodeHierarchy("PREVIOUS");
+    }
+
+    private void assertEpisodeHierarchy(String direction) {
         String episodeId = stripOrEmpty(config.getProperty("vrgo.content.detail.episode.hierarchy.chain.middle.id"));
         if (!isConfiguredId(episodeId)) {
             throw new SkipException("Set vrgo.content.detail.episode.hierarchy.chain.middle.id.");
@@ -241,9 +244,9 @@ public class ContentDetail extends BaseTest {
         );
     }
 
-    @Test(priority = 71, description = "GET 3PPVODMovie/{contentId} — 3ppvodmovie editorial detail")
-    @Story("3PP VOD — GET /content-detail-service/pub/v1/3PPVODMovie/{contentId} (3ppvodmovie)")
-    public void threePpVodMovie_detail_returns200() {
+    @Test(priority = 73, description = "CD_2.23_v1_3ppMovieDetail_Valid")
+    @Story("CD_2.23_v1_3ppMovieDetail_Valid — GET /content-detail-service/pub/v1/3PPVODMovie/{contentId}")
+    public void CD_2_23_v1_3ppMovieDetail_Valid() {
         String id = stripOrEmpty(config.getProperty("vrgo.content.detail.3ppvod.movie.id"));
         if (!isConfiguredId(id)) {
             throw new SkipException("Set vrgo.content.detail.3ppvod.movie.id.");
@@ -254,9 +257,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-3ppvod-movie", "vrgo.content.detail.3ppvod.movie.expected.message");
     }
 
-    @Test(priority = 72, description = "GET 3PPVODEpisode/{contentId} — 3ppvodepisode editorial detail")
-    @Story("3PP VOD — GET /content-detail-service/pub/v1/3PPVODEpisode/{contentId} (3ppvodepisode)")
-    public void threePpVodEpisode_detail_returns200() {
+    @Test(priority = 74, description = "CD_2.23_v1_3ppEpisodeDetail_Valid")
+    @Story("CD_2.23_v1_3ppEpisodeDetail_Valid — GET /content-detail-service/pub/v1/3PPVODEpisode/{contentId}")
+    public void CD_2_23_v1_3ppEpisodeDetail_Valid() {
         String id = stripOrEmpty(config.getProperty("vrgo.content.detail.3ppvod.episode.id"));
         if (!isConfiguredId(id)) {
             throw new SkipException("Set vrgo.content.detail.3ppvod.episode.id.");
@@ -267,9 +270,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-3ppvod-episode", "vrgo.content.detail.3ppvod.episode.expected.message");
     }
 
-    @Test(priority = 73, description = "GET 3PPVODSeason/{contentId} — 3ppvodseason editorial detail")
-    @Story("3PP VOD — GET /content-detail-service/pub/v1/3PPVODSeason/{contentId} (3ppvodseason)")
-    public void threePpVodSeason_detail_returns200() {
+    @Test(priority = 75, description = "CD_2.23_v1_3ppSeasonDetail_Valid")
+    @Story("CD_2.23_v1_3ppSeasonDetail_Valid — GET /content-detail-service/pub/v1/3PPVODSeason/{contentId}")
+    public void CD_2_23_v1_3ppSeasonDetail_Valid() {
         String id = stripOrEmpty(config.getProperty("vrgo.content.detail.3ppvod.season.id"));
         if (!isConfiguredId(id)) {
             throw new SkipException("Set vrgo.content.detail.3ppvod.season.id.");
@@ -296,9 +299,9 @@ public class ContentDetail extends BaseTest {
         return stripOrEmpty(config.getProperty("vrgo.content.detail.episode.hierarchy.chain.middle.id"));
     }
 
-    @Test(priority = 80, description = "GET movie editorial detail")
-    @Story("GET /content-detail-service/pub/v1/movie/{movieId}")
-    public void movieDetail_returns200() {
+    @Test(priority = 80, description = "CD_2.6_v1_moviesDetail_Valid")
+    @Story("CD_2.6_v1_moviesDetail_Valid — GET /content-detail-service/pub/v1/movie/{movieId}")
+    public void CD_2_6_v1_moviesDetail_Valid() {
         String movieId = stripOrEmpty(config.getProperty("vrgo.content.detail.movie.id"));
         if (!isConfiguredId(movieId)) {
             throw new SkipException("Set vrgo.content.detail.movie.id.");
@@ -307,9 +310,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-movie", null);
     }
 
-    // @Test(priority = 85, description = "GET movie detail using alternate UUID-style id when configured")
-    // @Story("GET /content-detail-service/pub/v1/movie/{movieId} — alt id")
-    // public void movieDetail_altId_returns200() {
+    // @Test(priority = 85, description = "CD_2.6_v1_moviesDetail_Valid — alt id")
+    // @Story("CD_2.6_v1_moviesDetail_Valid — GET /content-detail-service/pub/v1/movie/{movieId} — alt id")
+    // public void CD_2_6_v1_moviesDetail_altId_Valid() {
     //     String primary = stripOrEmpty(config.getProperty("vrgo.content.detail.movie.id"));
     //     String alt = stripOrEmpty(config.getProperty("vrgo.content.detail.movie.alt.id"));
     //     if (!isConfiguredId(alt) || alt.equalsIgnoreCase(primary)) {
@@ -319,9 +322,9 @@ public class ContentDetail extends BaseTest {
     //     attachAndAssertEnvelope(r, "content-detail-movie-alt", null);
     // }
 
-    @Test(priority = 90, description = "GET boxset editorial detail")
-    @Story("GET /content-detail-service/pub/v1/boxset/{boxsetId}")
-    public void boxsetDetail_returns200() {
+    @Test(priority = 90, description = "CD_2.15_v1_boxsetDetail_Valid")
+    @Story("CD_2.15_v1_boxsetDetail_Valid — GET /content-detail-service/pub/v1/boxset/{boxsetId}")
+    public void CD_2_15_v1_boxsetDetail_Valid() {
         String boxsetId = stripOrEmpty(config.getProperty("vrgo.content.detail.boxset.id"));
         if (!isConfiguredId(boxsetId)) {
             throw new SkipException("Set vrgo.content.detail.boxset.id.");
@@ -330,9 +333,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-boxset", "vrgo.content.detail.boxset.expected.message");
     }
 
-    @Test(priority = 95, description = "GET boxset/{boxsetId}/binge — boxset binge-watch payload")
-    @Story("GET /content-detail-service/pub/v1/boxset/{boxsetId}/binge")
-    public void boxsetBinge_returns200() {
+    @Test(priority = 95, description = "CD_2.24_v1_boxsetBingeWatch_Valid")
+    @Story("CD_2.24_v1_boxsetBingeWatch_Valid — GET /content-detail-service/pub/v1/boxset/{boxsetId}/binge")
+    public void CD_2_24_v1_boxsetBingeWatch_Valid() {
         String dedicated = stripOrEmpty(config.getProperty("vrgo.content.detail.boxset.binge.boxset.id"));
         String boxsetId = isConfiguredId(dedicated)
                 ? dedicated
@@ -347,9 +350,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-boxset-binge", "vrgo.content.detail.boxset.binge.expected.message");
     }
 
-    @Test(priority = 100, description = "GET boxset/childs with boxsetid header and pagination query")
-    @Story("GET /content-detail-service/pub/v1/boxset/childs")
-    public void boxsetChilds_headerBoxsetId_returns200() {
+    @Test(priority = 100, description = "CD_2.22_v1_boxsetChild_Valid")
+    @Story("CD_2.22_v1_boxsetChild_Valid — GET /content-detail-service/pub/v1/boxset/childs")
+    public void CD_2_22_v1_boxsetChild_Valid() {
         String childsBoxsetId = config.getProperty("vrgo.content.detail.boxset.childs.boxset.id");
         String boxsetId = isConfiguredId(childsBoxsetId)
                 ? childsBoxsetId.strip()
@@ -381,19 +384,31 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "boxset-childs-response", "vrgo.content.detail.boxset.childs.expected.message");
     }
 
-    @DataProvider(name = "trailerContent")
-    public static Object[][] trailerContent() {
-        return new Object[][]{
-                {"movie", "vrgo.content.detail.movie.id"},
-                {"series", "vrgo.content.detail.close.series.id"},
-                {"series", "vrgo.content.detail.open.series.id"},
-                {"boxset", "vrgo.content.detail.boxset.id"}
-        };
+    @Test(priority = 110, description = "CD_2.18_v1_trailer_Movie_Valid")
+    @Story("CD_2.18_v1_trailer_Movie_Valid — GET /content-detail-service/pub/v1/trailer/movie/{contentId}")
+    public void CD_2_18_v1_trailer_Movie_Valid() {
+        assertTrailer("movie", "vrgo.content.detail.movie.id");
     }
 
-    @Test(priority = 110, dataProvider = "trailerContent", description = "GET trailer/{contentType}/{contentId} — data null or object")
-    @Story("GET /content-detail-service/pub/v1/trailer/{contentType}/{contentId}")
-    public void trailer_byContentType_returns200(String contentType, String contentIdPropertyKey) {
+    @Test(priority = 111, description = "CD_2.18_v1_trailer_CloseSeries_Valid")
+    @Story("CD_2.18_v1_trailer_CloseSeries_Valid — GET /content-detail-service/pub/v1/trailer/series/{contentId}")
+    public void CD_2_18_v1_trailer_CloseSeries_Valid() {
+        assertTrailer("series", "vrgo.content.detail.close.series.id");
+    }
+
+    @Test(priority = 112, description = "CD_2.18_v1_trailer_OpenSeries_Valid")
+    @Story("CD_2.18_v1_trailer_OpenSeries_Valid — GET /content-detail-service/pub/v1/trailer/series/{contentId}")
+    public void CD_2_18_v1_trailer_OpenSeries_Valid() {
+        assertTrailer("series", "vrgo.content.detail.open.series.id");
+    }
+
+    @Test(priority = 113, description = "CD_2.18_v1_trailer_Boxset_Valid")
+    @Story("CD_2.18_v1_trailer_Boxset_Valid — GET /content-detail-service/pub/v1/trailer/boxset/{contentId}")
+    public void CD_2_18_v1_trailer_Boxset_Valid() {
+        assertTrailer("boxset", "vrgo.content.detail.boxset.id");
+    }
+
+    private void assertTrailer(String contentType, String contentIdPropertyKey) {
         String contentId = stripOrEmpty(config.getProperty(contentIdPropertyKey));
         if (!isConfiguredId(contentId)) {
             throw new SkipException("Configure " + contentIdPropertyKey + " for trailer row: " + contentType);
@@ -414,9 +429,9 @@ public class ContentDetail extends BaseTest {
         }
     }
 
-    @Test(priority = 120, description = "GET channel editorial detail")
-    @Story("GET /content-detail-service/pub/v1/channel/{channelId}")
-    public void channelDetail_returns200() {
+    @Test(priority = 120, description = "CD_2.7_v1_channelDetail_Valid")
+    @Story("CD_2.7_v1_channelDetail_Valid — GET /content-detail-service/pub/v1/channel/{channelId}")
+    public void CD_2_7_v1_channelDetail_Valid() {
         String channelId = resolvePrimaryChannelId();
         if (!isConfiguredId(channelId)) {
             throw new SkipException("Set vrgo.content.detail.channel.id (or day / on-air channel ids).");
@@ -425,9 +440,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-channel", null);
     }
 
-    @Test(priority = 130, description = "GET on-air programme for linear channel")
-    @Story("GET /content-detail-service/pub/v1/on-air/{channelId}")
-    public void channelOnAir_returns200() {
+    @Test(priority = 130, description = "CD_2.19_v1_onAirEpg_Valid")
+    @Story("CD_2.19_v1_onAirEpg_Valid — GET /content-detail-service/pub/v1/on-air/{channelId}")
+    public void CD_2_19_v1_onAirEpg_Valid() {
         String channelId = resolveOnAirChannelId();
         if (!isConfiguredId(channelId)) {
             throw new SkipException("Set channel id for on-air (vrgo.content.detail.channel.on.air.channel.id or fallbacks).");
@@ -436,9 +451,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-on-air", "vrgo.content.detail.channel.on.air.expected.message");
     }
 
-    @Test(priority = 140, description = "GET channel/{channelId}/dates — scheduled dates list")
-    @Story("GET /content-detail-service/pub/v1/channel/{channelId}/dates")
-    public void channelDates_returns200() {
+    @Test(priority = 140, description = "CD_2.16_v1_channelEpgDates_Valid")
+    @Story("CD_2.16_v1_channelEpgDates_Valid — GET /content-detail-service/pub/v1/channel/{channelId}/dates")
+    public void CD_2_16_v1_channelEpgDates_Valid() {
         String channelId = resolvePrimaryChannelId();
         if (!isConfiguredId(channelId)) {
             throw new SkipException("Set vrgo.content.detail.channel.id (or fallbacks).");
@@ -447,9 +462,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-channel-dates", "vrgo.content.detail.channel.dates.expected.message");
     }
 
-    @Test(priority = 150, description = "GET events/{displayDate} with channelids header (today in channel.day.timezone)")
-    @Story("GET /content-detail-service/pub/v1/events/{displayDate}")
-    public void channelEvents_forToday_returns200() {
+    @Test(priority = 150, description = "CD_2.26_v1_events_Valid")
+    @Story("CD_2.26_v1_events_Valid — GET /content-detail-service/pub/v1/events/{displayDate}")
+    public void CD_2_26_v1_events_Valid() {
         String channelIds = resolveEventsChannelIdsHeader();
         if (channelIds == null || channelIds.isBlank()) {
             throw new SkipException("Set vrgo.content.detail.events.channel.ids or a primary channel id.");
@@ -460,9 +475,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-events", "vrgo.content.detail.events.expected.message");
     }
 
-    @Test(priority = 160, description = "GET channel-day/{channelId}/{dayEpochMs} — epoch in [now, end of day)")
-    @Story("GET /content-detail-service/pub/v1/channel-day/{channelId}/{dayEpochMs}")
-    public void channelDay_returns200() {
+    @Test(priority = 160, description = "CD_2.8_v1_channelDay_Valid")
+    @Story("CD_2.8_v1_channelDay_Valid — GET /content-detail-service/pub/v1/channel-day/{channelId}/{dayEpochMs}")
+    public void CD_2_8_v1_channelDay_Valid() {
         String channelId = resolveChannelDayChannelId();
         if (!isConfiguredId(channelId)) {
             throw new SkipException("Set vrgo.content.detail.channel.day.channel.id or channel.id.");
@@ -478,10 +493,10 @@ public class ContentDetail extends BaseTest {
 
     @Test(
             priority = 170,
-            description = "GET 48hr linear EPG grid — channel-day/48-hours/{channelId}/{dayEpochMs} (epoch in [now, end of day) unless fixed property >= now)"
+            description = "CD_2.13_v1_48hrsChannelDay_Valid"
     )
-    @Story("GET /content-detail-service/pub/v1/channel-day/48-hours/{channelId}/{dayEpochMs}")
-    public void channelDay48hr_returns200() {
+    @Story("CD_2.13_v1_48hrsChannelDay_Valid — GET /content-detail-service/pub/v1/channel-day/48-hours/{channelId}/{dayEpochMs}")
+    public void CD_2_13_v1_48hrsChannelDay_Valid() {
         String channelId = resolveChannelDay48hrChannelId();
         if (!isConfiguredId(channelId)) {
             throw new SkipException("Set 48hr or channel-day channel id.");
@@ -495,9 +510,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-channel-day-48hr", "vrgo.content.detail.channel.day.48hr.expected.message");
     }
 
-    @Test(priority = 180, description = "GET epg/{epgId} — programme detail; event id fetched from channel-day when not configured")
-    @Story("GET /content-detail-service/pub/v1/epg/{epgId}")
-    public void epgDetail_returns200() {
+    @Test(priority = 180, description = "CD_2.12_v1_epgDetail_Valid")
+    @Story("CD_2.12_v1_epgDetail_Valid — GET /content-detail-service/pub/v1/epg/{epgId}")
+    public void CD_2_12_v1_epgDetail_Valid() {
         String epgId = resolveEpgIdForDetailTest();
         if (!isConfiguredId(epgId)) {
             throw new SkipException(
@@ -636,18 +651,19 @@ public class ContentDetail extends BaseTest {
         }
     }
 
-    @DataProvider(name = "channelNeighborStates")
-    public static Object[][] channelNeighborStates() {
-        return new Object[][]{{"NEXT"}, {"PREVIOUS"}};
+    @Test(priority = 190, description = "CD_2.9_v1_nextPreviousChannel_Next_Valid")
+    @Story("CD_2.9_v1_nextPreviousChannel_Next_Valid — GET /content-detail-service/pub/v1/channel/{channelId}/NEXT")
+    public void CD_2_9_v1_nextPreviousChannel_Next_Valid() {
+        assertChannelNeighbor("NEXT");
     }
 
-    @Test(
-            priority = 190,
-            dataProvider = "channelNeighborStates",
-            description = "GET channel/{channelId}/{NEXT|PREVIOUS} — bouquet neighbour channel"
-    )
-    @Story("GET /content-detail-service/pub/v1/channel/{channelId}/{neighborState}")
-    public void channelBouquetNeighbor_returns200(String neighborState) {
+    @Test(priority = 191, description = "CD_2.9_v1_nextPreviousChannel_Previous_Valid")
+    @Story("CD_2.9_v1_nextPreviousChannel_Previous_Valid — GET /content-detail-service/pub/v1/channel/{channelId}/PREVIOUS")
+    public void CD_2_9_v1_nextPreviousChannel_Previous_Valid() {
+        assertChannelNeighbor("PREVIOUS");
+    }
+
+    private void assertChannelNeighbor(String neighborState) {
         String channelId = stripOrEmpty(config.getProperty("vrgo.content.detail.channel.neighbor.channel.id"));
         if (!isConfiguredId(channelId)) {
             channelId = resolvePrimaryChannelId();
@@ -660,23 +676,23 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-channel-neighbor-" + neighborState, null);
     }
 
-    @Test(priority = 200, description = "GET mybox/channels — channel catalogue")
-    @Story("GET /content-detail-service/pub/v1/mybox/channels")
-    public void myboxChannels_returns200() {
+    @Test(priority = 200, description = "CD_2.25_v1_myBoxChannels_Valid")
+    @Story("CD_2.25_v1_myBoxChannels_Valid — GET /content-detail-service/pub/v1/mybox/channels")
+    public void CD_2_25_v1_myBoxChannels_Valid() {
         Response r = contentDetailApi.getMyboxChannelsRaw();
         attachAndAssertEnvelope(r, "content-detail-mybox-channels", "vrgo.content.detail.mybox.channels.expected.message");
     }
 
-    @Test(priority = 210, description = "GET mybox/genres — genre list")
-    @Story("GET /content-detail-service/pub/v1/mybox/genres")
-    public void myboxGenres_returns200() {
+    @Test(priority = 210, description = "CD_2.16_v1_myBoxGenres_Valid")
+    @Story("CD_2.16_v1_myBoxGenres_Valid — GET /content-detail-service/pub/v1/mybox/genres")
+    public void CD_2_16_v1_myBoxGenres_Valid() {
         Response r = contentDetailApi.getMyboxGenresRaw();
         attachAndAssertEnvelope(r, "content-detail-mybox-genres", "vrgo.content.detail.mybox.genres.expected.message");
     }
 
-    @Test(priority = 215, description = "GET mybox/{dayEpochMs} with limit, offset — full MyBox EPG grid")
-    @Story("GET /content-detail-service/pub/v1/mybox/{dayEpochMs}")
-    public void mybox_returns200() {
+    @Test(priority = 215, description = "CD_2.10_v1_myBox_Valid")
+    @Story("CD_2.10_v1_myBox_Valid — GET /content-detail-service/pub/v1/mybox/{dayEpochMs}")
+    public void CD_2_10_v1_myBox_Valid() {
         long epoch = pickEpochMs(
                 "vrgo.content.detail.mybox.epoch.ms",
                 "vrgo.content.detail.channel.day.timezone"
@@ -688,9 +704,9 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-mybox", "vrgo.content.detail.mybox.expected.message");
     }
 
-    @Test(priority = 220, description = "GET filter/ — channel filter catalogue (data array of name, channelKey)")
-    @Story("GET /content-detail-service/pub/v1/filter/")
-    public void channelFilters_returns200() {
+    @Test(priority = 220, description = "CD_2.17_v1_getFilters_Valid")
+    @Story("CD_2.17_v1_getFilters_Valid — GET /content-detail-service/pub/v1/filter/")
+    public void CD_2_17_v1_getFilters_Valid() {
         Response r = contentDetailApi.getChannelFiltersRaw();
         AllureAttachmentUtils.attachJson("content-detail-channel-filters", r.asString());
         var then = r.then()
@@ -706,9 +722,9 @@ public class ContentDetail extends BaseTest {
         }
     }
 
-    @Test(priority = 230, description = "GET mini-mybox/{dayEpochMs} with limit, offset, epgEnum")
-    @Story("GET /content-detail-service/pub/v2/mini-mybox/{dayEpochMs}")
-    public void miniMybox_returns200() {
+    @Test(priority = 230, description = "CD_2.11_v2_miniMyBox_Valid")
+    @Story("CD_2.11_v2_miniMyBox_Valid — GET /content-detail-service/pub/v2/mini-mybox/{dayEpochMs}")
+    public void CD_2_11_v2_miniMyBox_Valid() {
         long epoch = pickEpochMs(
                 "vrgo.content.detail.mini.mybox.epoch.ms",
                 "vrgo.content.detail.channel.day.timezone"

@@ -21,7 +21,8 @@ import static org.hamcrest.Matchers.notNullValue;
 
 /**
  * VRGO config-service: {@code GET .../platform-configs}, {@code GET .../avatars}, {@code GET .../operator-configs},
- * and {@code GET .../image-configs}. Each successful test asserts {@code data} is non-null and non-empty (list/map) where applicable.
+ * {@code GET .../image-configs}, and {@code GET .../preferences}. Each successful test asserts {@code data} is non-null
+ * and non-empty (list/map) where applicable.
  * Static headers come from {@code vrgo.header.*} in the active environment file.
  *
  * <p>Run order uses {@code @Test(priority = ...)} so platform-configs runs before avatars; avatars returns 401 with
@@ -113,6 +114,26 @@ public class ConfigService extends BaseTest {
 
         Response r = configServiceApi.getOperatorConfigsRaw();
         AllureAttachmentUtils.attachJson("operator-configs-response", r.asString());
+        assertConfigServiceResponseOrSkip(r, null);
+    }
+
+    @Test(
+            priority = 4,
+            description = "GET /config-service/v1/preferences — 200 and status true (page/size from properties)"
+    )
+    @Story("GET /config-service/v1/preferences")
+    public void configService_getPreferences_returnsOk() {
+        requireConfigServicePrerequisites();
+
+        int page = readIntProperty("vrgo.config.service.preferences.default.page", 0);
+        int size = readIntProperty("vrgo.config.service.preferences.default.size", 100);
+
+        Allure.parameter("environment", Environment.current().name());
+        Allure.parameter("preferences.page", String.valueOf(page));
+        Allure.parameter("preferences.size", String.valueOf(size));
+
+        Response r = configServiceApi.getPreferencesRaw(page, size);
+        AllureAttachmentUtils.attachJson("preferences-p" + page + "-s" + size, r.asString());
         assertConfigServiceResponseOrSkip(r, null);
     }
 

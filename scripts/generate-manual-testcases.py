@@ -50,18 +50,6 @@ HEADERS = [
 
 # Known data-provider expansions (module -> provider name -> list of variant labels)
 DATA_PROVIDER_VARIANTS: dict[str, dict[str, list[str]]] = {
-    "ContentDetail.java": {
-        "seriesEpisodeViewAllTypes": ["NEXT", "PREVIOUS", "PREVIOUS_NEXT"],
-        "bingeWatchEpisodeDirections": ["NEXT", "PREVIOUS"],
-        "episodeHierarchyThreeStateDirections": ["NEXT", "CURRENT", "PREVIOUS"],
-        "trailerContent": [
-            "movie (movie id)",
-            "series (close series id)",
-            "series (open series id)",
-            "boxset (boxset id)",
-        ],
-        "channelNeighborStates": ["NEXT", "PREVIOUS"],
-    },
     "ConfigService.java": {
         "platformConfigPlatforms": [
             "SET_TOP_BOX_ULTRA",

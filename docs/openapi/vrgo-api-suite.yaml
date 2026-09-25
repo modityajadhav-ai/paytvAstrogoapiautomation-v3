@@ -1,0 +1,1740 @@
+openapi: 3.0.3
+info:
+  title: VRGO API Suite
+  description: |
+    OpenAPI specification derived from the API Automation V3 test suite.
+
+    Covers all VRGO microservices exercised by the regression suite:
+    subscriber-event-service, subscriber-activity-producer, content-detail-service,
+    homescreen-service, homescreen-proxy, config-service, search-proxy,
+    recommendation-proxy, learn-action, token-generator-service, and consumer auth.
+
+    **Authentication**
+    - Subscriber endpoints: `Authorization: Bearer <JWT>` + `x-api-key`
+    - Guest endpoints (`/pub/` routes on search-proxy): guest JWT + guest header overrides
+    - OAuth token refresh/exchange: separate auth host (`vrgo.auth.token.url`)
+
+    **Common VRGO headers** (applied by all clients via `vrgo.header.*` properties):
+    `platform`, `profileid`, `profiletype`, `device_id`, `cp_id`, `entitlementhash`,
+    `entitlements`, `entitlementvalues`, `ottbouquetid`, `environmentcode`, `language`,
+    `languagecode`, `local`, `catalogueids`, `contenttype`, `isentitlementenabled`,
+    `tenant_identifier`, `session_id`, and browser CORS headers.
+
+    Response envelopes typically follow `{ "data": ..., "status": ..., "message": ... }`.
+    Schemas below reflect request bodies used in tests; response schemas are indicative.
+  version: 1.0.0
+  contact:
+    name: VRGO API Automation Team
+
+servers:
+  - url: https://api.vrgo.test.xp.irdeto.com
+    description: Test
+  - url: https://api.vrgo.dev.xp.irdeto.com
+    description: Dev
+  - url: https://api.vrgo.astro.stage.xp.irdeto.com
+    description: Stage
+  - url: https://api.vrptv.astro.stage.xp.irdeto.com
+    description: Stage 2
+  - url: https://api.vrgo.load.xp.irdeto.com
+    description: Load
+  - url: https://api.vrptv.ctrp.astro.com.my
+    description: Production
+
+tags:
+  - name: Auth
+    description: Consumer access-management OAuth (separate host per environment)
+  - name: Subscriber Event Service
+    description: Continue watch, watch again, favourites, locked channels, search history, last tuned channel
+  - name: Subscriber Activity Producer
+    description: Write continue-watch progress events
+  - name: Content Detail Service
+    description: VOD, series, boxset, channel, EPG, and mybox content metadata
+  - name: Homescreen Service
+    description: Menu, rails, footers, purchased content
+  - name: Homescreen Proxy
+    description: DRP rail hierarchy proxy
+  - name: Config Service
+    description: Platform, operator, image configs and avatars
+  - name: Search Proxy
+    description: Global search, suggester, usecase search (subscriber and guest)
+  - name: Recommendation Proxy
+    description: Content and rail recommendations by usecase
+  - name: Learn Action
+    description: User interaction / learning events
+  - name: Token Generator Service
+    description: CTG and UWM playback tokens
+
+security:
+  - bearerAuth: []
+    apiKey: []
+
+paths:
+  # ── Auth (consumer-am host — use auth server URL, not API gateway) ──────────
+  /v1/auth/token:
+    post:
+      tags: [Auth]
+      summary: Refresh or exchange OAuth token
+      description: |
+        Hosted on the consumer access-management host (`vrgo.auth.token.url`), not the API gateway.
+        Supports `grant_type=refresh_token` and `grant_type=token-exchange`.
+      servers:
+        - url: https://consumer-am.test.xp.irdeto.com
+          description: Test auth host
+        - url: https://consumer-am.dev.xp.irdeto.com
+          description: Dev auth host
+        - url: https://consumer-am.ctrp-stag.stgbpkastro.com
+          description: Stage auth host
+        - url: https://astro-consumer-am.int.xp.irdeto.com
+          description: Load auth host
+        - url: https://consumer-am.ctrp.astro.com.my
+          description: Production auth host
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/x-www-form-urlencoded:
+            schema:
+              oneOf:
+                - $ref: '#/components/schemas/RefreshTokenRequest'
+                - $ref: '#/components/schemas/TokenExchangeRequest'
+      responses:
+        '200':
+          description: Token issued
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/TokenResponse'
+
+  # ── Subscriber Event Service ───────────────────────────────────────────────
+  /subscriber-event-service/v3/continue-watch/continue:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get continue-watch list
+      operationId: getContinueWatch
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: isEntitlementEnabled
+          in: query
+          schema:
+            type: boolean
+            default: false
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/continue-watch/content/recent:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get most recently watched content
+      operationId: getContinueWatchRecent
+      parameters:
+        - name: contentType
+          in: query
+          required: true
+          schema:
+            type: string
+            example: VOD
+        - name: region
+          in: query
+          required: true
+          schema:
+            type: string
+            example: Malaysia
+        - name: contentId
+          in: query
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/continue-watch/content/recent/{seriesId}:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get recent episode for a series
+      operationId: getContinueWatchRecentBySeries
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: contentType
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: region
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/continue-watch/contents/progress:
+    post:
+      tags: [Subscriber Event Service]
+      summary: Get watch progress for multiple contents
+      operationId: postContinueWatchContentsProgress
+      parameters:
+        - name: region
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              additionalProperties:
+                type: string
+              description: Map of contentId to contentType
+              example:
+                a8d30db2-a55f-cc9b-b250-fa6b5d0e889c: VOD
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/cw/v3/progress:
+    post:
+      tags: [Subscriber Event Service]
+      summary: Get CW progress with filters
+      operationId: postCwProgress
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              properties:
+                filters:
+                  type: array
+                  items:
+                    type: object
+              example:
+                filters: []
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/continue-watch/content/boxset/{boxsetId}:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get continue-watch content for a boxset
+      operationId: getContinueWatchBoxsetContent
+      parameters:
+        - name: boxsetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/continue-watch/:
+    delete:
+      tags: [Subscriber Event Service]
+      summary: Remove content from continue-watch
+      operationId: deleteContinueWatch
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentRef'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/watch-again:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get watch-again list
+      operationId: getWatchAgain
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: contentType
+          in: query
+          schema:
+            type: string
+            example: VOD
+        - name: isEntitlementEnabled
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/favourites:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get favourites / watchlist
+      operationId: getFavourites
+      parameters:
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+        - name: contentTypes
+          in: query
+          schema:
+            type: string
+        - name: region
+          in: query
+          schema:
+            type: string
+        - name: isEntitlementEnabled
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+    post:
+      tags: [Subscriber Event Service]
+      summary: Add content to favourites
+      operationId: addFavourite
+      parameters:
+        - name: region
+          in: query
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/ContentRef'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/favourites/channels:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get favourite channels
+      operationId: getFavouriteChannels
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/favourites/{contentId}:
+    delete:
+      tags: [Subscriber Event Service]
+      summary: Remove content from favourites
+      operationId: deleteFavourite
+      parameters:
+        - name: contentId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: {}
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/locked/channels:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get locked channels
+      operationId: getLockedChannels
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+    post:
+      tags: [Subscriber Event Service]
+      summary: Lock a channel
+      operationId: lockChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channelId]
+              properties:
+                channelId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/locked/channels/{channelCode}/status:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get lock status for a channel
+      operationId: getLockedChannelStatus
+      parameters:
+        - name: channelCode
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v3/locked/channels/{channelId}:
+    delete:
+      tags: [Subscriber Event Service]
+      summary: Unlock a channel
+      operationId: unlockChannel
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v1/search-history:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get search history
+      operationId: getSearchHistory
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+    post:
+      tags: [Subscriber Event Service]
+      summary: Add search query to history
+      operationId: addSearchHistory
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [searchQuery]
+              properties:
+                searchQuery:
+                  type: string
+                  example: TITANIC
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+    delete:
+      tags: [Subscriber Event Service]
+      summary: Clear all search history
+      operationId: clearSearchHistory
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: {}
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/v1/search-history/{keyword}:
+    delete:
+      tags: [Subscriber Event Service]
+      summary: Delete a search history entry
+      operationId: deleteSearchHistoryKeyword
+      parameters:
+        - name: keyword
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        content:
+          application/json:
+            schema:
+              type: object
+              example: {}
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/last-tuned-channel:
+    get:
+      tags: [Subscriber Event Service]
+      summary: Get last tuned channel
+      operationId: getLastTunedChannel
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+    post:
+      tags: [Subscriber Event Service]
+      summary: Set last tuned channel
+      operationId: setLastTunedChannel
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [channelId]
+              properties:
+                channelId:
+                  type: string
+                  format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /subscriber-event-service/last-tuned-channel/{channelId}:
+    delete:
+      tags: [Subscriber Event Service]
+      summary: Remove last tuned channel entry
+      operationId: deleteLastTunedChannel
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Subscriber Activity Producer ───────────────────────────────────────────
+  /subscriber-activity-producer/v3/subscriber-continue-watch:
+    post:
+      tags: [Subscriber Activity Producer]
+      summary: Record continue-watch progress
+      operationId: postSubscriberContinueWatch
+      parameters:
+        - name: hasCompletedPlayBack
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/SubscriberContinueWatchRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Content Detail Service ─────────────────────────────────────────────────
+  /content-detail-service/pub/v1/series/{seriesId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get series detail
+      operationId: getSeries
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: region
+          in: query
+          schema:
+            type: string
+        - name: contentType
+          in: query
+          schema:
+            type: string
+            example: VOD
+        - name: isEntitlementEnabled
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/season_episode/{seasonId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get episodes for a season
+      operationId: getSeasonEpisodes
+      parameters:
+        - name: seasonId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            enum: [asc, desc]
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/series_episode/{seriesId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get episodes for a series
+      operationId: getSeriesEpisodes
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: sort
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/series/{seriesId}/episode/{episodeId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get series episode view-all
+      operationId: getSeriesEpisodeViewAll
+      parameters:
+        - name: seriesId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: episodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: type
+          in: query
+          schema:
+            type: string
+        - name: size
+          in: query
+          schema:
+            type: integer
+        - name: isOpenSeries
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/tv_show/{episodeId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get TV show episode detail
+      operationId: getTvShow
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: sort
+          in: query
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/episode/{episodeId}/{direction}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get next/previous episode (binge watch)
+      operationId: getEpisodeNeighbor
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: direction
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [NEXT, PREVIOUS]
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/{direction}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get episode hierarchy neighbor
+      operationId: getEpisodeHierarchy
+      parameters:
+        - name: episodeId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: direction
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [NEXT, CURRENT, PREVIOUS]
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/3PPVODMovie/{contentId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get 3PP VOD movie detail
+      operationId: get3ppVodMovie
+      parameters:
+        - name: contentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/3PPVODEpisode/{contentId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get 3PP VOD episode detail
+      operationId: get3ppVodEpisode
+      parameters:
+        - name: contentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/3PPVODSeason/{contentId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get 3PP VOD season detail
+      operationId: get3ppVodSeason
+      parameters:
+        - name: contentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/movie/{movieId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get movie detail
+      operationId: getMovie
+      parameters:
+        - name: movieId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/boxset/{boxsetId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get boxset detail
+      operationId: getBoxset
+      parameters:
+        - name: boxsetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/boxset/{boxsetId}/binge:
+    get:
+      tags: [Content Detail Service]
+      summary: Get boxset binge metadata
+      operationId: getBoxsetBinge
+      parameters:
+        - name: boxsetId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/boxset/childs:
+    get:
+      tags: [Content Detail Service]
+      summary: Get boxset child contents
+      operationId: getBoxsetChilds
+      parameters:
+        - name: boxsetid
+          in: header
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: fromMovie
+          in: query
+          schema:
+            type: integer
+        - name: pageSizeMovie
+          in: query
+          schema:
+            type: integer
+        - name: fromTvShow
+          in: query
+          schema:
+            type: integer
+        - name: pageSizeTvShow
+          in: query
+          schema:
+            type: integer
+        - name: fromTrailer
+          in: query
+          schema:
+            type: integer
+        - name: pageSizeTrailer
+          in: query
+          schema:
+            type: integer
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/trailer/{contentType}/{contentId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get trailer for content
+      operationId: getTrailer
+      parameters:
+        - name: contentType
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: contentId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/channel/{channelId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get channel detail
+      operationId: getChannel
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/on-air/{channelId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get on-air programme for channel
+      operationId: getOnAir
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/channel/{channelId}/dates:
+    get:
+      tags: [Content Detail Service]
+      summary: Get available EPG dates for channel
+      operationId: getChannelDates
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/events/{displayDate}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get EPG events for display date
+      operationId: getEvents
+      parameters:
+        - name: displayDate
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: channelids
+          in: header
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/channel-day/{channelId}/{dayEpochMs}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get channel day EPG
+      operationId: getChannelDay
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: dayEpochMs
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/channel-day/48-hours/{channelId}/{dayEpochMs}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get 48-hour channel day EPG
+      operationId: getChannelDay48Hours
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: dayEpochMs
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/epg/{epgId}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get EPG event detail
+      operationId: getEpgEvent
+      parameters:
+        - name: epgId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/channel/{channelId}/{neighborState}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get next/previous channel
+      operationId: getChannelNeighbor
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+            format: uuid
+        - name: neighborState
+          in: path
+          required: true
+          schema:
+            type: string
+            enum: [NEXT, PREVIOUS]
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/mybox/channels:
+    get:
+      tags: [Content Detail Service]
+      summary: Get mybox channels
+      operationId: getMyboxChannels
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/mybox/genres:
+    get:
+      tags: [Content Detail Service]
+      summary: Get mybox genres
+      operationId: getMyboxGenres
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/mybox/{dayEpochMs}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get mybox EPG for a day
+      operationId: getMybox
+      parameters:
+        - name: dayEpochMs
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v1/filter/:
+    get:
+      tags: [Content Detail Service]
+      summary: Get channel filters
+      operationId: getChannelFilters
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /content-detail-service/pub/v2/mini-mybox/{dayEpochMs}:
+    get:
+      tags: [Content Detail Service]
+      summary: Get mini mybox EPG
+      operationId: getMiniMybox
+      parameters:
+        - name: dayEpochMs
+          in: path
+          required: true
+          schema:
+            type: integer
+            format: int64
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: epgEnum
+          in: query
+          schema:
+            type: string
+            example: ON_AIR
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Homescreen Service ─────────────────────────────────────────────────────
+  /homescreen-service/pub/v2/menu/list/platformId:
+    get:
+      tags: [Homescreen Service]
+      summary: Get homescreen menu for platform
+      operationId: getHomescreenMenu
+      parameters:
+        - name: platformId
+          in: query
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /homescreen-service/pub/v1/rail-hierarchy/{linkToPageId}:
+    get:
+      tags: [Homescreen Service]
+      summary: Get rail hierarchy for a page
+      operationId: getRailHierarchy
+      parameters:
+        - name: linkToPageId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /homescreen-service/pub/v1/rail-hierarchy/{railId}/details:
+    get:
+      tags: [Homescreen Service]
+      summary: Get rail hierarchy details
+      operationId: getRailHierarchyDetails
+      parameters:
+        - name: railId
+          in: path
+          required: true
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /homescreen-service/pub/v1/rail/{railId}:
+    get:
+      tags: [Homescreen Service]
+      summary: Get rail contents
+      operationId: getRailById
+      parameters:
+        - name: railId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+        - name: entitlementFilteringEnabled
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /homescreen-service/pub/v1/see-all/{railId}:
+    get:
+      tags: [Homescreen Service]
+      summary: Get see-all rail contents
+      operationId: getSeeAllRail
+      parameters:
+        - name: railId
+          in: path
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+        - name: sort
+          in: query
+          schema:
+            type: string
+            example: Recommended
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /homescreen-service/pub/v1/purchased-rail:
+    get:
+      tags: [Homescreen Service]
+      summary: Get purchased content rail
+      operationId: getPurchasedRail
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: contentType
+          in: query
+          schema:
+            type: string
+            example: VOD,BOXSET
+        - name: isEntitlementEnabled
+          in: query
+          schema:
+            type: boolean
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /homescreen-service/pub/v1/footers/{platformId}:
+    get:
+      tags: [Homescreen Service]
+      summary: Get platform footers
+      operationId: getFooters
+      parameters:
+        - name: platformId
+          in: path
+          required: true
+          schema:
+            type: string
+        - name: platform
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Homescreen Proxy ───────────────────────────────────────────────────────
+  /homescreen-proxy/pub/v1/rail-hierarchy:
+    get:
+      tags: [Homescreen Proxy]
+      summary: Get DRP rail hierarchy
+      operationId: getHomescreenProxyRailHierarchy
+      parameters:
+        - name: pageId
+          in: query
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: string
+            example: home
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+        - name: appCode
+          in: header
+          schema:
+            type: string
+            example: PAYTV
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Config Service ─────────────────────────────────────────────────────────
+  /config-service/pub/v1/platform-configs:
+    get:
+      tags: [Config Service]
+      summary: Get platform configurations
+      operationId: getPlatformConfigs
+      parameters:
+        - name: platform
+          in: header
+          schema:
+            type: string
+            example: WEB
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /config-service/v1/avatars:
+    get:
+      tags: [Config Service]
+      summary: Get profile avatars
+      operationId: getAvatars
+      parameters:
+        - $ref: '#/components/parameters/limit'
+        - $ref: '#/components/parameters/offset'
+        - name: platform
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /config-service/pub/v1/operator-configs:
+    get:
+      tags: [Config Service]
+      summary: Get operator configurations
+      operationId: getOperatorConfigs
+      parameters:
+        - $ref: '#/components/parameters/VrgoProfileHeaders'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /config-service/pub/v1/image-configs:
+    get:
+      tags: [Config Service]
+      summary: Get image configurations
+      operationId: getImageConfigs
+      parameters:
+        - $ref: '#/components/parameters/VrgoProfileHeaders'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Search Proxy ───────────────────────────────────────────────────────────
+  /search-proxy/v1/global-content-search:
+    get:
+      tags: [Search Proxy]
+      summary: Global content search (subscriber)
+      operationId: globalContentSearch
+      parameters:
+        - name: search
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /search-proxy/pub/v1/global-content-search:
+    get:
+      tags: [Search Proxy]
+      summary: Global content search (guest)
+      operationId: globalContentSearchGuest
+      description: Uses guest JWT and guest header overrides (`vrgo.search.proxy.guest.header.*`).
+      parameters:
+        - name: search
+          in: query
+          required: true
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /search-proxy/v1/search-suggester:
+    get:
+      tags: [Search Proxy]
+      summary: Search suggester (subscriber)
+      operationId: searchSuggester
+      parameters:
+        - name: search
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: string
+            example: search
+        - name: uc
+          in: query
+          schema:
+            type: string
+            example: suggest
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /search-proxy/pub/v1/search-suggester:
+    get:
+      tags: [Search Proxy]
+      summary: Search suggester (guest)
+      operationId: searchSuggesterGuest
+      parameters:
+        - name: search
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: string
+        - name: uc
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /search-proxy/v1/search-by-usecase:
+    get:
+      tags: [Search Proxy]
+      summary: Search by usecase (subscriber)
+      operationId: searchByUsecase
+      parameters:
+        - name: usecase
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [trending_on_astro, popular_search, search]
+        - name: page
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /search-proxy/pub/v1/search-by-usecase:
+    get:
+      tags: [Search Proxy]
+      summary: Search by usecase (guest)
+      operationId: searchByUsecaseGuest
+      parameters:
+        - name: usecase
+          in: query
+          required: true
+          schema:
+            type: string
+        - name: page
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /search-proxy/v1/subgenre-preference:
+    get:
+      tags: [Search Proxy]
+      summary: Get subgenre preferences
+      operationId: getSubgenrePreference
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Recommendation Proxy ─────────────────────────────────────────────────
+  /recommendation-proxy/v1/content-by-usecase:
+    get:
+      tags: [Recommendation Proxy]
+      summary: Get recommended content by usecase
+      operationId: getContentByUsecase
+      parameters:
+        - name: usecase
+          in: query
+          required: true
+          schema:
+            type: string
+            enum: [more_like_this_vod, more_like_this_epg, dont_miss]
+        - name: page
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+        - name: contentid
+          in: header
+          schema:
+            type: string
+        - name: contenttype
+          in: header
+          schema:
+            type: string
+        - name: primarygenre
+          in: header
+          schema:
+            type: string
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /recommendation-proxy/v1/rail-by-usecase:
+    get:
+      tags: [Recommendation Proxy]
+      summary: Get recommended rail by usecase
+      operationId: getRailByUsecase
+      parameters:
+        - name: usecase
+          in: query
+          required: true
+          schema:
+            type: string
+            example: dont_miss
+        - name: page
+          in: query
+          schema:
+            type: string
+        - $ref: '#/components/parameters/offset'
+        - $ref: '#/components/parameters/limit'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Learn Action ───────────────────────────────────────────────────────────
+  /learn-action/v1/learn:
+    post:
+      tags: [Learn Action]
+      summary: Post a learn / user-action event
+      operationId: postLearnAction
+      parameters:
+        - name: action
+          in: query
+          required: true
+          schema:
+            type: string
+            enum:
+              - bookmark
+              - clicked_on_search_result
+              - stop_watching
+              - end_watching
+              - start_watching
+              - purchased
+              - download
+              - record
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/LearnActionRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  # ── Token Generator Service ────────────────────────────────────────────────
+  /token-generator-service/v2/ctg:
+    post:
+      tags: [Token Generator Service]
+      summary: Generate CTG playback token
+      operationId: postCtgToken
+      parameters:
+        - name: isStatic
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/CtgTokenRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+  /token-generator-service/v2/uwm:
+    post:
+      tags: [Token Generator Service]
+      summary: Generate UWM playback token
+      operationId: postUwmToken
+      parameters:
+        - name: isStatic
+          in: query
+          schema:
+            type: boolean
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              $ref: '#/components/schemas/UwmTokenRequest'
+      responses:
+        '200':
+          $ref: '#/components/responses/DataEnvelope'
+
+components:
+  securitySchemes:
+    bearerAuth:
+      type: http
+      scheme: bearer
+      bearerFormat: JWT
+      description: Subscriber or guest JWT from consumer-am token endpoint
+    apiKey:
+      type: apiKey
+      in: header
+      name: x-api-key
+      description: VRGO API gateway key (`vrgo.x.api.key` / `VRGO_X_API_KEY`)
+
+  parameters:
+    limit:
+      name: limit
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+    offset:
+      name: offset
+      in: query
+      schema:
+        type: integer
+        minimum: 0
+    VrgoProfileHeaders:
+      name: platform
+      in: header
+      description: |
+        Config endpoints also accept profile headers: `environmentcode`, `language`,
+        `languagecode`, `local`, `profiletype`, and `profileid`.
+      schema:
+        type: string
+
+  responses:
+    DataEnvelope:
+      description: Standard VRGO response envelope
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/DataEnvelope'
+
+  schemas:
+    DataEnvelope:
+      type: object
+      properties:
+        data:
+          description: Response payload (shape varies by endpoint)
+        status:
+          type: string
+        message:
+          type: string
+
+    ContentRef:
+      type: object
+      required: [contentId, contentType]
+      properties:
+        contentId:
+          type: string
+          format: uuid
+        contentType:
+          type: string
+          example: VOD
+
+    SubscriberContinueWatchRequest:
+      type: object
+      required: [contentId, contentType, watchDuration, subscriberId]
+      properties:
+        contentId:
+          type: string
+          format: uuid
+        contentType:
+          type: string
+          example: VOD
+        watchDuration:
+          type: integer
+          description: Watch progress in seconds
+        subscriberId:
+          type: string
+        groupKey:
+          type: string
+          description: Required for linear/CDVR events (e.g. channel-day eventId)
+
+    LearnActionRequest:
+      type: object
+      required: [contentId, contentType, sessionDuration, lastPosition, refUseCase, primaryGenre]
+      properties:
+        contentId:
+          type: string
+        contentType:
+          type: string
+        sessionDuration:
+          type: integer
+        lastPosition:
+          type: integer
+        refUseCase:
+          type: string
+          example: uiredirect/default
+        primaryGenre:
+          type: string
+          example: Entertainment
+
+    CtgTokenRequest:
+      type: object
+      required: [contentType, contentId, sessionInfo]
+      properties:
+        contentType:
+          type: string
+          example: channel
+        contentId:
+          type: string
+          format: uuid
+        sessionInfo:
+          type: object
+          description: Session metadata (see token-generator/session-info.json fixture)
+
+    UwmTokenRequest:
+      type: object
+      required: [type, cdnList, contentType, contentId, sessionInfo]
+      properties:
+        type:
+          type: integer
+          example: 0
+        cdnList:
+          type: array
+          items:
+            type: object
+        isWMAuthEnabled:
+          type: boolean
+        isCDNAuthEnabled:
+          type: boolean
+        laContentId:
+          type: string
+        contentType:
+          type: string
+        contentId:
+          type: string
+          format: uuid
+        sessionInfo:
+          type: object
+
+    RefreshTokenRequest:
+      type: object
+      required: [grant_type, refresh_token]
+      properties:
+        grant_type:
+          type: string
+          enum: [refresh_token]
+        refresh_token:
+          type: string
+
+    TokenExchangeRequest:
+      type: object
+      required: [grant_type, subject_token, profile_id, profile_type]
+      properties:
+        grant_type:
+          type: string
+          enum: [token-exchange]
+        subject_token:
+          type: string
+        profile_id:
+          type: string
+          format: uuid
+        profile_type:
+          type: string
+          example: ADULT
+
+    TokenResponse:
+      type: object
+      properties:
+        access_token:
+          type: string
+        refresh_token:
+          type: string
+        token_type:
+          type: string
+        expires_in:
+          type: integer

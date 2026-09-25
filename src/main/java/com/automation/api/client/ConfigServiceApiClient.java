@@ -18,6 +18,7 @@ import java.util.Map;
  * {@link #getOperatorConfigsRaw()} merges {@code vrgo.config.service.operator.profile.id} and
  * {@code vrgo.config.service.operator.header.*} onto the usual {@code vrgo.header.*} map.
  * {@link #getImageConfigsRaw()} does the same for {@code vrgo.config.service.image.*}.
+ * {@link #getPreferencesRaw(int, int)} calls {@code GET .../preferences} with {@code page} and {@code size} query params.
  */
 public class ConfigServiceApiClient extends BaseApiClient {
 
@@ -30,6 +31,7 @@ public class ConfigServiceApiClient extends BaseApiClient {
     private final String avatarsPath;
     private final String operatorConfigsPath;
     private final String imageConfigsPath;
+    private final String preferencesPath;
 
     public ConfigServiceApiClient(EnvironmentConfig config) {
         super(config, config.getProperty("vrgo.base.url"));
@@ -49,6 +51,10 @@ public class ConfigServiceApiClient extends BaseApiClient {
         this.imageConfigsPath = config.getProperty(
                 "vrgo.config.service.image.configs.path",
                 "/config-service/pub/v1/image-configs"
+        );
+        this.preferencesPath = config.getProperty(
+                "vrgo.config.service.preferences.path",
+                "/config-service/v1/preferences"
         );
     }
 
@@ -115,6 +121,18 @@ public class ConfigServiceApiClient extends BaseApiClient {
             overrides.put("profileid", imageProfileId.strip());
         }
         return vrgoGiven(null, overrides).when().get(imageConfigsPath.strip());
+    }
+
+    /**
+     * GET {@code vrgo.config.service.preferences.path} with {@code page} and {@code size} query params.
+     * Static headers come from {@code vrgo.header.*} in the active environment file.
+     */
+    public Response getPreferencesRaw(int page, int size) {
+        return vrgoGiven(null, null)
+                .queryParam("page", page)
+                .queryParam("size", size)
+                .when()
+                .get(preferencesPath.strip());
     }
 
     /**

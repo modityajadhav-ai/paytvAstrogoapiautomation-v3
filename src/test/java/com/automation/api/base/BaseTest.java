@@ -19,6 +19,7 @@ import com.automation.api.client.TokenGeneratorApiClient;
 import com.automation.api.client.VRSearchProxyApiClient;
 import com.automation.api.client.UserApiClient;
 import com.automation.api.config.EnvironmentConfig;
+import com.automation.api.listeners.ExtentRestAssuredFilter;
 import io.qameta.allure.restassured.AllureRestAssured;
 import io.restassured.RestAssured;
 import org.slf4j.LoggerFactory;
@@ -82,7 +83,7 @@ public abstract class BaseTest {
             return;
         }
 
-        RestAssured.filters(new AllureRestAssured());
+        RestAssured.filters(new AllureRestAssured(), new ExtentRestAssuredFilter());
 
         VrgoAuthSecretsLoader.loadLocalSecretsIfPresent();
         applyOptionalVrgoOverrides();

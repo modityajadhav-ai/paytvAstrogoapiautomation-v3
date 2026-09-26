@@ -9,7 +9,9 @@ import io.restassured.specification.RequestSpecification;
 import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.LinkedHashMap;
+import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 
 /**
  * VRGO content-detail-service: series (close/open), seasons, episodes, tv_show, BingeWatch ({@code /episode/...}),
@@ -262,7 +264,16 @@ public class ContentDetailApiClient extends BaseApiClient {
      * {@code direction} is {@code NEXT}, {@code CURRENT}, or {@code PREVIOUS}.
      */
     public Response getEpisodeHierarchyRaw(String episodeId, String direction) {
-        return vrgoGiven()
+        return getEpisodeHierarchyRaw(episodeId, direction, null, null);
+    }
+
+    public Response getEpisodeHierarchyRaw(
+            String episodeId,
+            String direction,
+            Map<String, String> headerOverrides,
+            Set<String> excludeHeaders
+    ) {
+        return vrgoGiven(false, headerOverrides, excludeHeaders)
                 .pathParam("episodeId", episodeId)
                 .pathParam("direction", direction)
                 .when()
@@ -396,7 +407,7 @@ public class ContentDetailApiClient extends BaseApiClient {
         Map<String, String> guestOverrides = new LinkedHashMap<>(
                 environmentConfig.propertiesWithPrefix(GUEST_HEADER_PREFIX)
         );
-        return vrgoGiven(true, guestOverrides)
+        return vrgoGiven(true, guestOverrides, null)
                 .pathParam("channelId", channelId)
                 .pathParam("dayEpochMs", dayEpochMs)
                 .when()
@@ -450,7 +461,21 @@ public class ContentDetailApiClient extends BaseApiClient {
 
     /** GET {@code /pub/v1/mybox/{dayEpochMs}} — full MyBox EPG grid for the given day. */
     public Response getMyboxRaw(long dayEpochMs, int limit, int offset) {
-        return vrgoGiven()
+        return getMyboxRaw(dayEpochMs, limit, offset, null, null);
+    }
+
+    /**
+     * GET {@code /pub/v1/mybox/{dayEpochMs}} with optional header overrides or exclusions
+     * (e.g. omit or replace {@code ottbouquetid} for negative tests).
+     */
+    public Response getMyboxRaw(
+            long dayEpochMs,
+            int limit,
+            int offset,
+            Map<String, String> headerOverrides,
+            Set<String> excludeHeaders
+    ) {
+        return vrgoGiven(false, headerOverrides, excludeHeaders)
                 .pathParam("dayEpochMs", dayEpochMs)
                 .queryParam("limit", limit)
                 .queryParam("offset", offset)
@@ -483,10 +508,14 @@ public class ContentDetailApiClient extends BaseApiClient {
     }
 
     private RequestSpecification vrgoGiven() {
-        return vrgoGiven(false, null);
+        return vrgoGiven(false, null, null);
     }
 
-    private RequestSpecification vrgoGiven(boolean useGuestToken, Map<String, String> headerOverrides) {
+    private RequestSpecification vrgoGiven(
+            boolean useGuestToken,
+            Map<String, String> headerOverrides,
+            Set<String> excludeHeaders
+    ) {
         RequestSpecification r = given().spec(spec);
 
         String token;
@@ -528,6 +557,15 @@ public class ContentDetailApiClient extends BaseApiClient {
                 if (e.getValue() != null && !e.getValue().isBlank()) {
                     headers.put(e.getKey(), e.getValue().strip());
                 }
+            }
+        }
+        if (excludeHeaders != null && !excludeHeaders.isEmpty()) {
+            for (String exclude : excludeHeaders) {
+                if (exclude == null || exclude.isBlank()) {
+                    continue;
+                }
+                String normalized = exclude.strip().toLowerCase(Locale.ROOT);
+                headers.keySet().removeIf(k -> k.equalsIgnoreCase(normalized));
             }
         }
         for (Map.Entry<String, String> e : headers.entrySet()) {

@@ -25,6 +25,7 @@ import java.time.format.DateTimeFormatter;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.ThreadLocalRandom;
 
 import static org.hamcrest.Matchers.equalTo;
@@ -62,6 +63,37 @@ public class ContentDetail extends BaseTest {
         );
         attachAndAssertEnvelope(r, "content-detail-close-series", null);
         assertOperatorMetaPresent(r);
+    }
+
+    @Test(priority = 11, description = "CD_2.1_v1_closedSeriesDetail_seriesIdInvalid_Invalid")
+    @Story("CD_2.1_v1_closedSeriesDetail_seriesIdInvalid_Invalid — GET /content-detail-service/pub/v1/series/{seriesId} — invalid seriesId")
+    public void CD_2_1_v1_closedSeriesDetail_seriesIdInvalid_Invalid() {
+        Allure.parameter("seriesId", "INVALID");
+        Response r = contentDetailApi.getSeriesDetailRaw(
+                "INVALID",
+                seriesRegion(),
+                seriesContentType(),
+                seriesIsEntitlementEnabled()
+        );
+        attachAndAssertSeriesDetailBadRequest(r, "content-detail-close-series-series-id-invalid");
+    }
+
+    @Test(priority = 12, description = "CD_2.1_v1_closedSeriesDetail_isOpenFalse_Valid")
+    @Story("CD_2.1_v1_closedSeriesDetail_isOpenFalse_Valid — GET /content-detail-service/pub/v1/series/{seriesId} — isOpen false")
+    public void CD_2_1_v1_closedSeriesDetail_isOpenFalse_Valid() {
+        String seriesId = stripOrEmpty(config.getProperty("vrgo.content.detail.close.series.id"));
+        if (!isConfiguredId(seriesId)) {
+            throw new SkipException("Set vrgo.content.detail.close.series.id.");
+        }
+        Allure.parameter("seriesId", seriesId);
+        Response r = contentDetailApi.getSeriesDetailRaw(
+                seriesId,
+                seriesRegion(),
+                seriesContentType(),
+                seriesIsEntitlementEnabled()
+        );
+        attachAndAssertEnvelope(r, "content-detail-close-series-is-open", null);
+        assertJsonBooleanFieldFalseWherePresent(r, "isOpen");
     }
 
     @Test(priority = 20, description = "CD_2.3_v1_openSeriesDetail_Valid")
@@ -244,7 +276,81 @@ public class ContentDetail extends BaseTest {
         );
     }
 
-    @Test(priority = 73, description = "CD_2.23_v1_3ppMovieDetail_Valid")
+    @Test(priority = 73, description = "CD_2.14_v1_episodeHierarchy_catalogueidsBlank_Invalid")
+    @Story("CD_2.14_v1_episodeHierarchy_catalogueidsBlank_Invalid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/{direction} — blank catalogueids")
+    public void CD_2_14_v1_episodeHierarchy_catalogueidsBlank_Invalid() {
+        String episodeId = resolveEpisodeHierarchyMiddleEpisodeId();
+        Allure.parameter("episodeHierarchy.direction", "NEXT");
+        Allure.parameter("episodeHierarchy.episodeId", episodeId);
+        Response r = contentDetailApi.getEpisodeHierarchyRaw(
+                episodeId,
+                "NEXT",
+                Map.of("catalogueids", ""),
+                null
+        );
+        attachAndAssertEpisodeHierarchyBadRequest(
+                r,
+                "episode-hierarchy-catalogueids-blank",
+                "#ERR-300-102"
+        );
+    }
+
+    @Test(priority = 74, description = "CD_2.14_v1_episodeHierarchy_nextEpisodeNotAvailable_Invalid")
+    @Story("CD_2.14_v1_episodeHierarchy_nextEpisodeNotAvailable_Invalid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/NEXT — next unavailable")
+    public void CD_2_14_v1_episodeHierarchy_nextEpisodeNotAvailable_Invalid() {
+        String episodeId = resolveEpisodeHierarchyNextUnavailableEpisodeId();
+        Allure.parameter("episodeHierarchy.direction", "NEXT");
+        Allure.parameter("episodeHierarchy.episodeId", episodeId);
+        Response r = contentDetailApi.getEpisodeHierarchyRaw(episodeId, "NEXT");
+        attachAndAssertEpisodeHierarchyBadRequest(
+                r,
+                "episode-hierarchy-next-unavailable",
+                "#ERR-300-131"
+        );
+    }
+
+    @Test(priority = 75, description = "CD_2.14_v1_episodeHierarchy_previousEpisodeNotAvailable_Invalid")
+    @Story("CD_2.14_v1_episodeHierarchy_previousEpisodeNotAvailable_Invalid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/PREVIOUS — previous unavailable")
+    public void CD_2_14_v1_episodeHierarchy_previousEpisodeNotAvailable_Invalid() {
+        String episodeId = resolveEpisodeHierarchyPreviousUnavailableEpisodeId();
+        Allure.parameter("episodeHierarchy.direction", "PREVIOUS");
+        Allure.parameter("episodeHierarchy.episodeId", episodeId);
+        Response r = contentDetailApi.getEpisodeHierarchyRaw(episodeId, "PREVIOUS");
+        attachAndAssertEpisodeHierarchyBadRequest(
+                r,
+                "episode-hierarchy-previous-unavailable",
+                "#ERR-300-131"
+        );
+    }
+
+    @Test(priority = 76, description = "CD_2.14_v1_episodeHierarchy_episodeIdInvalid_Invalid")
+    @Story("CD_2.14_v1_episodeHierarchy_episodeIdInvalid_Invalid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/NEXT — invalid episodeId")
+    public void CD_2_14_v1_episodeHierarchy_episodeIdInvalid_Invalid() {
+        String episodeId = resolveEpisodeHierarchyInvalidEpisodeId();
+        Allure.parameter("episodeHierarchy.direction", "NEXT");
+        Allure.parameter("episodeHierarchy.episodeId", episodeId);
+        Response r = contentDetailApi.getEpisodeHierarchyRaw(episodeId, "NEXT");
+        attachAndAssertEpisodeHierarchyBadRequest(
+                r,
+                "episode-hierarchy-episode-id-invalid",
+                "#ERR-300-131"
+        );
+    }
+
+    @Test(priority = 77, description = "CD_2.14_v1_episodeHierarchy_episodeIdNull_Invalid")
+    @Story("CD_2.14_v1_episodeHierarchy_episodeIdNull_Invalid — GET /content-detail-service/pub/v1/episode-hierarchy/{episodeId}/NEXT — null episodeId path")
+    public void CD_2_14_v1_episodeHierarchy_episodeIdNull_Invalid() {
+        Allure.parameter("episodeHierarchy.direction", "NEXT");
+        Allure.parameter("episodeHierarchy.episodeId", "null");
+        Response r = contentDetailApi.getEpisodeHierarchyRaw("null", "NEXT");
+        attachAndAssertEpisodeHierarchyBadRequest(
+                r,
+                "episode-hierarchy-episode-id-null",
+                "#ERR-300-131"
+        );
+    }
+
+    @Test(priority = 78, description = "CD_2.23_v1_3ppMovieDetail_Valid")
     @Story("CD_2.23_v1_3ppMovieDetail_Valid — GET /content-detail-service/pub/v1/3PPVODMovie/{contentId}")
     public void CD_2_23_v1_3ppMovieDetail_Valid() {
         String id = stripOrEmpty(config.getProperty("vrgo.content.detail.3ppvod.movie.id"));
@@ -257,7 +363,7 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-3ppvod-movie", "vrgo.content.detail.3ppvod.movie.expected.message");
     }
 
-    @Test(priority = 74, description = "CD_2.23_v1_3ppEpisodeDetail_Valid")
+    @Test(priority = 79, description = "CD_2.23_v1_3ppEpisodeDetail_Valid")
     @Story("CD_2.23_v1_3ppEpisodeDetail_Valid — GET /content-detail-service/pub/v1/3PPVODEpisode/{contentId}")
     public void CD_2_23_v1_3ppEpisodeDetail_Valid() {
         String id = stripOrEmpty(config.getProperty("vrgo.content.detail.3ppvod.episode.id"));
@@ -270,7 +376,7 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-3ppvod-episode", "vrgo.content.detail.3ppvod.episode.expected.message");
     }
 
-    @Test(priority = 75, description = "CD_2.23_v1_3ppSeasonDetail_Valid")
+    @Test(priority = 80, description = "CD_2.23_v1_3ppSeasonDetail_Valid")
     @Story("CD_2.23_v1_3ppSeasonDetail_Valid — GET /content-detail-service/pub/v1/3PPVODSeason/{contentId}")
     public void CD_2_23_v1_3ppSeasonDetail_Valid() {
         String id = stripOrEmpty(config.getProperty("vrgo.content.detail.3ppvod.season.id"));
@@ -299,7 +405,53 @@ public class ContentDetail extends BaseTest {
         return stripOrEmpty(config.getProperty("vrgo.content.detail.episode.hierarchy.chain.middle.id"));
     }
 
-    @Test(priority = 80, description = "CD_2.6_v1_moviesDetail_Valid")
+    private String resolveEpisodeHierarchyMiddleEpisodeId() {
+        String episodeId = stripOrEmpty(config.getProperty("vrgo.content.detail.episode.hierarchy.chain.middle.id"));
+        if (!isConfiguredId(episodeId)) {
+            throw new SkipException("Set vrgo.content.detail.episode.hierarchy.chain.middle.id.");
+        }
+        return episodeId;
+    }
+
+    private String resolveEpisodeHierarchyNextUnavailableEpisodeId() {
+        String dedicated = config.getProperty("vrgo.content.detail.episode.hierarchy.next.unavailable.episode.id");
+        if (isConfiguredId(dedicated)) {
+            return dedicated.strip();
+        }
+        String chainNext = config.getProperty("vrgo.content.detail.episode.hierarchy.chain.next.id");
+        if (isConfiguredId(chainNext)) {
+            return chainNext.strip();
+        }
+        throw new SkipException(
+                "Set vrgo.content.detail.episode.hierarchy.next.unavailable.episode.id "
+                        + "or vrgo.content.detail.episode.hierarchy.chain.next.id."
+        );
+    }
+
+    private String resolveEpisodeHierarchyPreviousUnavailableEpisodeId() {
+        String dedicated = config.getProperty("vrgo.content.detail.episode.hierarchy.previous.unavailable.episode.id");
+        if (isConfiguredId(dedicated)) {
+            return dedicated.strip();
+        }
+        String first = config.getProperty("vrgo.content.detail.episode.hierarchy.first.episode.id");
+        if (isConfiguredId(first)) {
+            return first.strip();
+        }
+        throw new SkipException(
+                "Set vrgo.content.detail.episode.hierarchy.previous.unavailable.episode.id "
+                        + "or vrgo.content.detail.episode.hierarchy.first.episode.id."
+        );
+    }
+
+    private String resolveEpisodeHierarchyInvalidEpisodeId() {
+        String dedicated = config.getProperty("vrgo.content.detail.episode.hierarchy.invalid.episode.id");
+        if (isConfiguredId(dedicated)) {
+            return dedicated.strip();
+        }
+        return "INVALID";
+    }
+
+    @Test(priority = 81, description = "CD_2.6_v1_moviesDetail_Valid")
     @Story("CD_2.6_v1_moviesDetail_Valid — GET /content-detail-service/pub/v1/movie/{movieId}")
     public void CD_2_6_v1_moviesDetail_Valid() {
         String movieId = stripOrEmpty(config.getProperty("vrgo.content.detail.movie.id"));
@@ -473,6 +625,49 @@ public class ContentDetail extends BaseTest {
         Allure.parameter("events.displayDate", displayDate);
         Response r = contentDetailApi.getEventsRaw(displayDate, channelIds);
         attachAndAssertEnvelope(r, "content-detail-events", "vrgo.content.detail.events.expected.message");
+    }
+
+    @Test(priority = 151, description = "CD_2.26_v1_events_metaChannelDaysSevenDays_Valid")
+    @Story("CD_2.26_v1_events_metaChannelDaysSevenDays_Valid — GET /content-detail-service/pub/v1/events/{displayDate} — meta.channelDays")
+    public void CD_2_26_v1_events_metaChannelDaysSevenDays_Valid() {
+        String channelIds = resolveEventsChannelIdsHeader();
+        if (channelIds == null || channelIds.isBlank()) {
+            throw new SkipException("Set vrgo.content.detail.events.channel.ids or a primary channel id.");
+        }
+        String displayDate = resolveEventsDisplayDate();
+        Allure.parameter("events.displayDate", displayDate);
+        Allure.parameter("events.channelids", channelIds);
+        Response r = contentDetailApi.getEventsRaw(displayDate, channelIds);
+        AllureAttachmentUtils.attachJson("content-detail-events-meta-channel-days", r.asString());
+        r.then()
+                .statusCode(200)
+                .body("status", equalTo(true))
+                .body("data.meta.channelDays", notNullValue())
+                .body("data.meta.channelDays.size()", equalTo(7));
+    }
+
+    @Test(priority = 152, description = "CD_2.26_v1_events_channelidsBlank_Invalid")
+    @Story("CD_2.26_v1_events_channelidsBlank_Invalid — GET /content-detail-service/pub/v1/events/{displayDate} — blank channelids")
+    public void CD_2_26_v1_events_channelidsBlank_Invalid() {
+        String displayDate = resolveEventsDisplayDate();
+        Allure.parameter("events.displayDate", displayDate);
+        Allure.parameter("events.channelids", "");
+        Response r = contentDetailApi.getEventsRaw(displayDate, "");
+        attachAndAssertEventsBadRequest(r, "content-detail-events-channelids-blank", "#ERR-300-014");
+    }
+
+    @Test(priority = 153, description = "CD_2.26_v1_events_displayDateInvalid_Invalid")
+    @Story("CD_2.26_v1_events_displayDateInvalid_Invalid — GET /content-detail-service/pub/v1/events/{displayDate} — invalid date format")
+    public void CD_2_26_v1_events_displayDateInvalid_Invalid() {
+        String channelIds = resolveEventsChannelIdsHeader();
+        if (channelIds == null || channelIds.isBlank()) {
+            throw new SkipException("Set vrgo.content.detail.events.channel.ids or a primary channel id.");
+        }
+        String invalidDisplayDate = "2026-09-24";
+        Allure.parameter("events.displayDate", invalidDisplayDate);
+        Allure.parameter("events.channelids", channelIds);
+        Response r = contentDetailApi.getEventsRaw(invalidDisplayDate, channelIds);
+        attachAndAssertEventsBadRequest(r, "content-detail-events-display-date-invalid", "#ERR-300-011");
     }
 
     @Test(priority = 160, description = "CD_2.8_v1_channelDay_Valid")
@@ -704,6 +899,51 @@ public class ContentDetail extends BaseTest {
         attachAndAssertEnvelope(r, "content-detail-mybox", "vrgo.content.detail.mybox.expected.message");
     }
 
+    @Test(priority = 216, description = "CD_2.10_v1_myBox_ottbouquetidAbsent_Invalid")
+    @Story("CD_2.10_v1_myBox_ottbouquetidAbsent_Invalid — GET /content-detail-service/pub/v1/mybox/{dayEpochMs} — ottbouquetid absent")
+    public void CD_2_10_v1_myBox_ottbouquetidAbsent_Invalid() {
+        MyboxRequestParams params = myboxRequestParams();
+        Allure.parameter("mybox.epochMs", String.valueOf(params.epochMs));
+        Response r = contentDetailApi.getMyboxRaw(
+                params.epochMs,
+                params.limit,
+                params.offset,
+                null,
+                Set.of("ottbouquetid")
+        );
+        attachAndAssertMyboxBadRequest(r, "content-detail-mybox-ottbouquetid-absent");
+    }
+
+    @Test(priority = 217, description = "CD_2.10_v1_myBox_ottbouquetidInvalid_Invalid")
+    @Story("CD_2.10_v1_myBox_ottbouquetidInvalid_Invalid — GET /content-detail-service/pub/v1/mybox/{dayEpochMs} — invalid ottbouquetid")
+    public void CD_2_10_v1_myBox_ottbouquetidInvalid_Invalid() {
+        MyboxRequestParams params = myboxRequestParams();
+        Allure.parameter("mybox.epochMs", String.valueOf(params.epochMs));
+        Allure.parameter("mybox.ottbouquetid", "INVALID");
+        Response r = contentDetailApi.getMyboxRaw(
+                params.epochMs,
+                params.limit,
+                params.offset,
+                Map.of("ottbouquetid", "INVALID"),
+                null
+        );
+        attachAndAssertMyboxBadRequest(r, "content-detail-mybox-ottbouquetid-invalid");
+    }
+
+    @Test(priority = 218, description = "CD_2.10_v1_myBox_isCDVREnabled_NotNull_Valid")
+    @Story("CD_2.10_v1_myBox_isCDVREnabled_NotNull_Valid — GET /content-detail-service/pub/v1/mybox/{dayEpochMs} — isCDVREnabled not null")
+    public void CD_2_10_v1_myBox_isCDVREnabled_NotNull_Valid() {
+        Response r = getMyboxSuccessResponse();
+        assertJsonFieldNotNullWherePresent(r, "isCDVREnabled");
+    }
+
+    @Test(priority = 219, description = "CD_2.10_v1_myBox_dvbTriplet_NotNull_Valid")
+    @Story("CD_2.10_v1_myBox_dvbTriplet_NotNull_Valid — GET /content-detail-service/pub/v1/mybox/{dayEpochMs} — dvbTriplet not null")
+    public void CD_2_10_v1_myBox_dvbTriplet_NotNull_Valid() {
+        Response r = getMyboxSuccessResponse();
+        assertJsonFieldNotNullWherePresent(r, "dvbTriplet");
+    }
+
     @Test(priority = 220, description = "CD_2.17_v1_getFilters_Valid")
     @Story("CD_2.17_v1_getFilters_Valid — GET /content-detail-service/pub/v1/filter/")
     public void CD_2_17_v1_getFilters_Valid() {
@@ -745,6 +985,158 @@ public class ContentDetail extends BaseTest {
             if (expectedMessage != null && !expectedMessage.isBlank()) {
                 then.body("message", equalTo(expectedMessage.strip()));
             }
+        }
+    }
+
+    private Response getMyboxSuccessResponse() {
+        MyboxRequestParams params = myboxRequestParams();
+        Allure.parameter("mybox.epochMs", String.valueOf(params.epochMs));
+        Response r = contentDetailApi.getMyboxRaw(params.epochMs, params.limit, params.offset);
+        attachAndAssertEnvelope(r, "content-detail-mybox", "vrgo.content.detail.mybox.expected.message");
+        return r;
+    }
+
+    private MyboxRequestParams myboxRequestParams() {
+        long epoch = pickEpochMs(
+                "vrgo.content.detail.mybox.epoch.ms",
+                "vrgo.content.detail.channel.day.timezone"
+        );
+        int limit = parsePositiveInt(config.getProperty("vrgo.content.detail.mybox.limit"), 1000);
+        int offset = parseNonNegativeInt(config.getProperty("vrgo.content.detail.mybox.offset"), 0);
+        return new MyboxRequestParams(epoch, limit, offset);
+    }
+
+    private void attachAndAssertMyboxBadRequest(Response r, String attachmentName) {
+        AllureAttachmentUtils.attachJson(attachmentName, r.asString());
+        r.then().statusCode(400);
+    }
+
+    private void attachAndAssertSeriesDetailBadRequest(Response r, String attachmentName) {
+        AllureAttachmentUtils.attachJson(attachmentName, r.asString());
+        r.then().statusCode(400);
+    }
+
+    private void attachAndAssertEventsBadRequest(Response r, String attachmentName, String expectedErrorCode) {
+        AllureAttachmentUtils.attachJson(attachmentName, r.asString());
+        r.then()
+                .statusCode(400)
+                .body("errorCode", equalTo(expectedErrorCode));
+    }
+
+    private void attachAndAssertEpisodeHierarchyBadRequest(
+            Response r,
+            String attachmentName,
+            String expectedErrorCode
+    ) {
+        AllureAttachmentUtils.attachJson(attachmentName, r.asString());
+        r.then()
+                .statusCode(400)
+                .body("errorCode", equalTo(expectedErrorCode));
+    }
+
+    /**
+     * Fails when {@code fieldName} is present on any object in the response tree but its value is JSON null.
+     */
+    private static void assertJsonFieldNotNullWherePresent(Response r, String fieldName) {
+        JsonNode root;
+        try {
+            root = JsonUtils.mapper().readTree(r.asString());
+        } catch (JsonProcessingException e) {
+            Assert.fail("Failed to parse response JSON for " + fieldName + " check: " + e.getMessage());
+            return;
+        }
+        List<String> nullPaths = new ArrayList<>();
+        collectNullFieldPaths(root, fieldName, "$", nullPaths);
+        if (!nullPaths.isEmpty()) {
+            Assert.fail("Expected non-null " + fieldName + " wherever present; null at: " + nullPaths);
+        }
+    }
+
+    /**
+     * Fails when {@code fieldName} is present on any object in the response tree but its value is not {@code false}.
+     */
+    private static void assertJsonBooleanFieldFalseWherePresent(Response r, String fieldName) {
+        JsonNode root;
+        try {
+            root = JsonUtils.mapper().readTree(r.asString());
+        } catch (JsonProcessingException e) {
+            Assert.fail("Failed to parse response JSON for " + fieldName + " check: " + e.getMessage());
+            return;
+        }
+        List<String> invalidPaths = new ArrayList<>();
+        collectNonFalseBooleanFieldPaths(root, fieldName, "$", invalidPaths);
+        if (!invalidPaths.isEmpty()) {
+            Assert.fail("Expected " + fieldName + " to be false wherever present; found: " + invalidPaths);
+        }
+    }
+
+    private static void collectNonFalseBooleanFieldPaths(
+            JsonNode node,
+            String fieldName,
+            String path,
+            List<String> invalidPaths
+    ) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isObject()) {
+            if (node.has(fieldName)) {
+                JsonNode value = node.get(fieldName);
+                if (value == null || value.isNull() || !value.isBoolean() || value.asBoolean()) {
+                    invalidPaths.add(path + "." + fieldName + "=" + value);
+                }
+            }
+            var fields = node.fields();
+            while (fields.hasNext()) {
+                var entry = fields.next();
+                collectNonFalseBooleanFieldPaths(entry.getValue(), fieldName, path + "." + entry.getKey(), invalidPaths);
+            }
+            return;
+        }
+        if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                collectNonFalseBooleanFieldPaths(node.get(i), fieldName, path + "[" + i + "]", invalidPaths);
+            }
+        }
+    }
+
+    private static void collectNullFieldPaths(
+            JsonNode node,
+            String fieldName,
+            String path,
+            List<String> nullPaths
+    ) {
+        if (node == null || node.isNull()) {
+            return;
+        }
+        if (node.isObject()) {
+            JsonNode value = node.get(fieldName);
+            if (value != null && value.isNull()) {
+                nullPaths.add(path + "." + fieldName);
+            }
+            var fields = node.fields();
+            while (fields.hasNext()) {
+                var entry = fields.next();
+                collectNullFieldPaths(entry.getValue(), fieldName, path + "." + entry.getKey(), nullPaths);
+            }
+            return;
+        }
+        if (node.isArray()) {
+            for (int i = 0; i < node.size(); i++) {
+                collectNullFieldPaths(node.get(i), fieldName, path + "[" + i + "]", nullPaths);
+            }
+        }
+    }
+
+    private static final class MyboxRequestParams {
+        private final long epochMs;
+        private final int limit;
+        private final int offset;
+
+        private MyboxRequestParams(long epochMs, int limit, int offset) {
+            this.epochMs = epochMs;
+            this.limit = limit;
+            this.offset = offset;
         }
     }
 

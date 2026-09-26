@@ -39,6 +39,7 @@ import static org.hamcrest.Matchers.equalTo;
  * then iterates over all configured learn actions in a single parameterised test.
  * <p>
  * Configurable via {@code vrgo.learn.action.*} keys in the active environment file.
+ * Guest tests use {@code vrgo.learn.action.guest.channel.id} when resolving channel-day EPG eventIds.
  */
 @Feature("Learn Action")
 public class LearnAction extends BaseTest {
@@ -265,17 +266,21 @@ public class LearnAction extends BaseTest {
         }
 
         String channelId = firstNonBlank(
+                config.getProperty("vrgo.learn.action.guest.channel.id"),
                 config.getProperty("vrgo.learn.action.channel.id"),
                 config.getProperty("vrgo.content.detail.channel.day.channel.id"),
                 config.getProperty("vrgo.content.detail.channel.id")
         );
         if (!isConfiguredId(channelId)) {
             throw new SkipException(
-                    "Set vrgo.learn.action.event.id (static EPG eventId) or a channel id "
-                            + "for guest learn-action tests.");
+                    "Set vrgo.learn.action.event.id (static EPG eventId) or a guest channel id "
+                            + "(vrgo.learn.action.guest.channel.id) for guest learn-action tests.");
         }
 
         long epoch = pickEpochMs();
+        Allure.parameter("channelDay.channelId", channelId.strip());
+        Allure.parameter("channelDay.epochMs", String.valueOf(epoch));
+
         Response channelDayResponse = contentDetailApi.getChannelDayRawGuest(
                 contentDetailApi.getChannelDayPathTemplate(),
                 channelId.strip(),
